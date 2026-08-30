@@ -8,8 +8,13 @@ import {
   RefreshCw, 
   Move, 
   Layers, 
-  Edit3,
-  Compass
+  Compass,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Crosshair,
+  Hand
 } from 'lucide-react';
 
 const NODE_RADIUS = 34;
@@ -39,6 +44,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [hasFit, setHasFit] = useState(false);
+  const [dragMoved, setDragMoved] = useState(false);
 
   // Filter entities by visible layer
   const allEntities = Object.values(model.entities);
@@ -122,55 +128,329 @@ export const GraphView: React.FC<GraphViewProps> = ({
     });
   }, [entities, positions]);
 
-  // Mouse / Wheel Handlers for Pan & Zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newScale = Math.min(Math.max(transform.scale * zoomFactor, 0.2), 3);
+  // Move camera by delta (for D-Pad, Arrow keys, etc.)
+  const panBy = useCallback((dx: number, dy: number) => {
+    setTransform(prev => ({
+      ...prev,
+      x: prev.x + dx,
+      y: prev.y + dy,
+    }));
+  }, []);
 
+  // Center camera at origin (0, 0)
+  const centerCamera = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    setTransform(prev => ({
+      ...prev,
+      x: rect.width / 2,
+      y: rect.height / 2,
+    }));
+  }, []);
 
-    setTransform({
-      scale: newScale,
-      x: mouseX - (mouseX - transform.x) * (newScale / transform.scale),
-      y: mouseY - (mouseY - transform.y) * (newScale / transform.scale),
-    });
-  };
+  // Native non-passive Wheel & Trackpad gesture handler
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+
+      if (e.ctrlKey || e.metaKey) {
+        // Trackpad pinch-to-zoom or Ctrl + Wheel zoom
+        const zoomFactor = e.deltaY < 0 ? 1.05 : 0.95;
+        setTransform(prev => {
+          const newScale = Math.min(Math.max(prev.scale * zoomFactor, 0.15), 3.5);
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+          return {
+            scale: newScale,
+            x: mouseX - (mouseX - prev.x) * (newScale / prev.scale),
+            y: mouseY - (mouseY - prev.y) * (newScale / prev.scale),
+          };
+        });
+      } else {
+        // Trackpad 2-finger scroll or standard wheel scroll (Finger scrolling)
+        setTransform(prev => ({
+          ...prev,
+          x: prev.x - e.deltaX,
+          y: prev.y - e.deltaY,
+        }));
+      }
+    };
+
+    container.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleNativeWheel);
+    };
+  }, []);
+
+  // Touch gesture handler (1-finger pan/node drag, 2-finger pinch-zoom & pan)
+  const touchStateRef = useRef<{
+    type: 'none' | 'pan' | 'node' | 'pinch';
+    nodeId?: string;
+    startX: number;
+    startY: number;
+    camStartX: number;
+    camStartY: number;
+    initialDist?: number;
+    initialScale?: number;
+    initialMidX?: number;
+    initialMidY?: number;
+  }>({
+    type: 'none',
+    startX: 0,
+    startY: 0,
+    camStartX: 0,
+    camStartY: 0,
+  });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const target = e.target as HTMLElement | SVGElement;
+        const nodeElem = target.closest('[data-node="true"]');
+        const badgeElem = target.closest('[data-badge="true"]');
+
+        if (nodeElem) {
+          const key = nodeElem.getAttribute('data-node-id');
+          if (key) {
+            e.preventDefault();
+            touchStateRef.current = {
+              type: 'node',
+              nodeId: key,
+              startX: touch.clientX,
+              startY: touch.clientY,
+              camStartX: transform.x,
+              camStartY: transform.y,
+            };
+            setDraggingNodeId(key);
+            return;
+          }
+        }
+
+        if (!badgeElem) {
+          e.preventDefault();
+          touchStateRef.current = {
+            type: 'pan',
+            startX: touch.clientX,
+            startY: touch.clientY,
+            camStartX: transform.x,
+            camStartY: transform.y,
+          };
+          setIsPanning(true);
+        }
+      } else if (e.touches.length >= 2) {
+        // Pinch-to-zoom with 2 fingers
+        e.preventDefault();
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+        const midX = (t0.clientX + t1.clientX) / 2;
+        const midY = (t0.clientY + t1.clientY) / 2;
+
+        touchStateRef.current = {
+          type: 'pinch',
+          initialDist: dist,
+          initialScale: transform.scale,
+          initialMidX: midX,
+          initialMidY: midY,
+          camStartX: transform.x,
+          camStartY: transform.y,
+          startX: midX,
+          startY: midY,
+        };
+        setIsPanning(true);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (touchStateRef.current.type === 'pan' && e.touches.length === 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const dx = touch.clientX - touchStateRef.current.startX;
+        const dy = touch.clientY - touchStateRef.current.startY;
+        setTransform(prev => ({
+          ...prev,
+          x: touchStateRef.current.camStartX + dx,
+          y: touchStateRef.current.camStartY + dy,
+        }));
+      } else if (touchStateRef.current.type === 'node' && e.touches.length === 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const nodeId = touchStateRef.current.nodeId;
+        if (nodeId) {
+          const dx = (touch.clientX - touchStateRef.current.startX) / transform.scale;
+          const dy = (touch.clientY - touchStateRef.current.startY) / transform.scale;
+          touchStateRef.current.startX = touch.clientX;
+          touchStateRef.current.startY = touch.clientY;
+          setPositions(prev => ({
+            ...prev,
+            [nodeId]: {
+              x: (prev[nodeId]?.x || 0) + dx,
+              y: (prev[nodeId]?.y || 0) + dy,
+            },
+          }));
+        }
+      } else if (e.touches.length >= 2 && touchStateRef.current.type === 'pinch') {
+        e.preventDefault();
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        const currentDist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+        const currentMidX = (t0.clientX + t1.clientX) / 2;
+        const currentMidY = (t0.clientY + t1.clientY) / 2;
+
+        if (touchStateRef.current.initialDist && touchStateRef.current.initialScale) {
+          const scaleFactor = currentDist / touchStateRef.current.initialDist;
+          const newScale = Math.min(
+            Math.max(touchStateRef.current.initialScale * scaleFactor, 0.15),
+            3.5
+          );
+
+          const rect = container.getBoundingClientRect();
+          const mouseX = touchStateRef.current.initialMidX! - rect.left;
+          const mouseY = touchStateRef.current.initialMidY! - rect.top;
+
+          const panDx = currentMidX - touchStateRef.current.initialMidX!;
+          const panDy = currentMidY - touchStateRef.current.initialMidY!;
+
+          setTransform({
+            scale: newScale,
+            x: mouseX - (mouseX - touchStateRef.current.camStartX) * (newScale / touchStateRef.current.initialScale) + panDx,
+            y: mouseY - (mouseY - touchStateRef.current.camStartY) * (newScale / touchStateRef.current.initialScale) + panDy,
+          });
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        touchStateRef.current.type = 'none';
+        setIsPanning(false);
+        setDraggingNodeId(null);
+      } else if (e.touches.length === 1 && touchStateRef.current.type === 'pinch') {
+        // Switch to single-finger pan
+        const touch = e.touches[0];
+        touchStateRef.current = {
+          type: 'pan',
+          startX: touch.clientX,
+          startY: touch.clientY,
+          camStartX: transform.x,
+          camStartY: transform.y,
+        };
+      }
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [transform.scale, transform.x, transform.y]);
+
+  // Mouse Down - starts panning or node drag
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && (e.target as HTMLElement).tagName === 'svg' || (e.target as HTMLElement).id === 'graph-bg') {
+    // Middle click (button 1) or right click (button 2) always pans
+    if (e.button === 1 || e.button === 2) {
+      e.preventDefault();
       setIsPanning(true);
       setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+      setDragMoved(false);
+      return;
+    }
+
+    // Left click on background or SVG canvas
+    if (e.button === 0) {
+      const target = e.target as HTMLElement | SVGElement;
+      const isNode = target.closest('[data-node="true"]');
+      const isBadge = target.closest('[data-badge="true"]');
+
+      if (!isNode && !isBadge) {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+        setDragMoved(false);
+      }
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setTransform(prev => ({
-        ...prev,
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
-      }));
-    } else if (draggingNodeId && positions[draggingNodeId]) {
-      const dx = (e.movementX) / transform.scale;
-      const dy = (e.movementY) / transform.scale;
-      setPositions(prev => ({
-        ...prev,
-        [draggingNodeId]: {
-          x: prev[draggingNodeId].x + dx,
-          y: prev[draggingNodeId].y + dy,
-        },
-      }));
-    }
-  };
+  // Global window listeners for smooth dragging even outside the container
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (isPanning) {
+        setDragMoved(true);
+        setTransform(prev => ({
+          ...prev,
+          x: e.clientX - panStart.x,
+          y: e.clientY - panStart.y,
+        }));
+      } else if (draggingNodeId && positions[draggingNodeId]) {
+        setDragMoved(true);
+        const dx = e.movementX / transform.scale;
+        const dy = e.movementY / transform.scale;
+        setPositions(prev => ({
+          ...prev,
+          [draggingNodeId]: {
+            x: prev[draggingNodeId].x + dx,
+            y: prev[draggingNodeId].y + dy,
+          },
+        }));
+      }
+    };
 
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDraggingNodeId(null);
-  };
+    const handleGlobalMouseUp = () => {
+      setIsPanning(false);
+      setDraggingNodeId(null);
+    };
+
+    if (isPanning || draggingNodeId) {
+      window.addEventListener('mousemove', handleGlobalMouseMove);
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isPanning, panStart, draggingNodeId, positions, transform.scale]);
+
+  // Keyboard navigation for Camera (Arrow keys / WASD)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Avoid intercepting when user is typing in textarea / input
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'textarea' || activeTag === 'input') {
+        return;
+      }
+
+      const step = e.shiftKey ? 120 : 40;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        panBy(0, step);
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        panBy(0, -step);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        panBy(step, 0);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        panBy(-step, 0);
+      } else if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        fitToView();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [panBy, fitToView]);
 
   const getLineDash = (status: string) => {
     if (status === 'hypothetical') return '6 4';
@@ -182,40 +462,57 @@ export const GraphView: React.FC<GraphViewProps> = ({
     <div
       ref={containerRef}
       id="graph-view-container"
-      className="h-full w-full bg-[#111317] relative overflow-hidden select-none flex flex-col"
-      onWheel={handleWheel}
+      tabIndex={0}
+      style={{ touchAction: 'none' }}
+      className="h-full w-full bg-[#111317] relative overflow-hidden select-none flex flex-col focus:outline-none"
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onContextMenu={(e) => {
+        // Suppress right-click menu if user was panning with right click
+        if (dragMoved) {
+          e.preventDefault();
+        }
+      }}
     >
-      {/* Graph Toolbar */}
+      {/* Top Left Toolbar */}
       <div className="absolute top-3 left-3 z-10 flex items-center space-x-1.5 bg-[#1C2028]/90 backdrop-blur border border-[#2F3440] p-1 rounded-md shadow-lg text-xs text-gray-300">
         <span className="px-2 py-0.5 font-medium text-gray-200 border-r border-[#2F3440] flex items-center space-x-1">
           <Compass className="w-3.5 h-3.5 text-indigo-400" />
           <span>Graph Canvas</span>
         </span>
         <button
-          onClick={() => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale * 1.2, 3) }))}
+          id="btn-zoom-in"
+          onClick={() => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale * 1.2, 3.5) }))}
           className="p-1 hover:bg-[#2A2F3B] hover:text-white rounded transition-colors"
-          title="Zoom In"
+          title="Zoom In (Ctrl + Wheel Up)"
         >
           <ZoomIn className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={() => setTransform(prev => ({ ...prev, scale: Math.max(prev.scale / 1.2, 0.2) }))}
+          id="btn-zoom-out"
+          onClick={() => setTransform(prev => ({ ...prev, scale: Math.max(prev.scale / 1.2, 0.15) }))}
           className="p-1 hover:bg-[#2A2F3B] hover:text-white rounded transition-colors"
-          title="Zoom Out"
+          title="Zoom Out (Ctrl + Wheel Down)"
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
         <button
+          id="btn-fit-view"
           onClick={fitToView}
           className="p-1 hover:bg-[#2A2F3B] hover:text-white rounded transition-colors"
-          title="Fit into view"
+          title="全体表示 (Fit into view)"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
         <button
+          id="btn-center-camera"
+          onClick={centerCamera}
+          className="p-1 hover:bg-[#2A2F3B] hover:text-white rounded transition-colors"
+          title="カメラを中心(0,0)にリセット"
+        >
+          <Crosshair className="w-3.5 h-3.5" />
+        </button>
+        <button
+          id="btn-reset-layout"
           onClick={() => {
             // Re-arrange circularly
             const total = entities.length;
@@ -234,17 +531,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
             setTimeout(() => fitToView(), 30);
           }}
           className="p-1 hover:bg-[#2A2F3B] hover:text-white rounded transition-colors"
-          title="Reset circular layout"
+          title="円形レイアウト再配置"
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
-        <span className="text-[11px] text-gray-500 pl-1">
+        <span className="text-[11px] text-gray-400 pl-1 font-mono">
           {Math.round(transform.scale * 100)}%
         </span>
       </div>
 
-      {/* Legend & Stats Overlay */}
-      <div className="absolute top-3 right-3 z-10 flex items-center space-x-2 bg-[#1C2028]/90 backdrop-blur border border-[#2F3440] px-2.5 py-1 rounded-md text-[11px] text-gray-400">
+      {/* Top Right Stats & Legend */}
+      <div className="absolute top-3 right-3 z-10 flex items-center space-x-2 bg-[#1C2028]/90 backdrop-blur border border-[#2F3440] px-2.5 py-1 rounded-md text-[11px] text-gray-400 shadow-md">
         <span className="flex items-center space-x-1">
           <span className="w-2 h-2 rounded-full bg-[#5B8DEF]" />
           <span>Char</span>
@@ -261,6 +558,62 @@ export const GraphView: React.FC<GraphViewProps> = ({
         <span className="text-gray-300 font-mono">{entities.length} nodes, {relations.length} edges</span>
       </div>
 
+      {/* Floating Camera Directional Controller (D-Pad) */}
+      <div className="absolute bottom-4 right-4 z-10 flex flex-col items-center bg-[#181B22]/90 backdrop-blur border border-[#2A2F3B] p-1.5 rounded-xl shadow-xl">
+        <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1 flex items-center space-x-1">
+          <Move className="w-2.5 h-2.5 text-sky-400" />
+          <span>Camera</span>
+        </div>
+        <button
+          id="btn-cam-up"
+          onClick={() => panBy(0, 70)}
+          className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
+          title="上へカメラ移動 (↑ / W)"
+        >
+          <ArrowUp className="w-3.5 h-3.5" />
+        </button>
+        <div className="flex items-center space-x-1 my-1">
+          <button
+            id="btn-cam-left"
+            onClick={() => panBy(70, 0)}
+            className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
+            title="左へカメラ移動 (← / A)"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            id="btn-cam-reset"
+            onClick={fitToView}
+            className="w-7 h-7 flex items-center justify-center bg-[#2A303D] hover:bg-sky-600 text-sky-300 hover:text-white rounded transition-colors text-[10px] font-bold"
+            title="全体リセット (Fit)"
+          >
+            FIT
+          </button>
+          <button
+            id="btn-cam-right"
+            onClick={() => panBy(-70, 0)}
+            className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
+            title="右へカメラ移動 (→ / D)"
+          >
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <button
+          id="btn-cam-down"
+          onClick={() => panBy(0, -70)}
+          className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
+          title="下へカメラ移動 (↓ / S)"
+        >
+          <ArrowDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Floating Pan Hint */}
+      <div className="absolute bottom-4 left-4 z-10 pointer-events-none hidden sm:flex items-center space-x-2 bg-[#181B22]/80 backdrop-blur border border-[#2A2F3B]/60 px-2.5 py-1 rounded text-[11px] text-gray-400 shadow-md">
+        <Hand className="w-3 h-3 text-sky-400" />
+        <span>1本指/ドラッグでカメラ移動 • 2本指でスクロール/ピンチズーム</span>
+      </div>
+
       {/* SVG Canvas */}
       {entities.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-500 space-y-2">
@@ -270,7 +623,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       ) : (
         <svg
           id="graph-svg"
-          className="w-full h-full cursor-grab active:cursor-grabbing"
+          className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
           style={{ width: '100%', height: '100%' }}
         >
           {/* Background Grid Pattern */}
@@ -346,6 +699,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
                   {/* Relation Label Badge */}
                   <g
+                    data-badge="true"
                     transform={`translate(${midX}, ${midY})`}
                     className="cursor-pointer"
                     onDoubleClick={(e) => {
@@ -397,11 +751,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
               return (
                 <g
                   key={entity.id}
+                  data-node="true"
+                  data-node-id={entity.id}
                   transform={`translate(${pos.x}, ${pos.y})`}
                   className="cursor-grab active:cursor-grabbing"
                   onMouseDown={(e) => {
-                    e.stopPropagation();
-                    setDraggingNodeId(entity.id);
+                    if (e.button === 0) {
+                      e.stopPropagation();
+                      setDraggingNodeId(entity.id);
+                      setDragMoved(false);
+                    }
                   }}
                 >
                   {/* Shadow / Glow */}
@@ -427,6 +786,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     fontSize="12.5"
                     fontWeight="700"
                     fontFamily="sans-serif"
+                    style={{ pointerEvents: 'none' }}
                   >
                     {entity.name}
                   </text>
@@ -440,6 +800,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     fontWeight="500"
                     opacity="0.9"
                     fontFamily="sans-serif"
+                    style={{ pointerEvents: 'none' }}
                   >
                     {entity.layer ? `${entity.type}:${entity.layer}` : entity.type}
                   </text>
