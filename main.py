@@ -1,5 +1,5 @@
 """
-Axral Codex - MVP1 "Explicit Text -> Graph" (plan.md v2 準拠)
+Axral WorldCode - MVP1 "Explicit Text -> Graph" (plan.md v2 準拠)
 
 対応スコープ:
   - Phase 0a: Entity / Relation の最小Canonical Data Model (core/models.py)
@@ -137,7 +137,7 @@ DEBOUNCE_MS = 250
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Axral Codex - MVP1 (Explicit Text -> Graph)")
+        self.setWindowTitle("Axral WorldCode - MVP1 (Explicit Text -> Graph)")
         self.resize(1200, 760)
 
         self.editor = QPlainTextEdit()

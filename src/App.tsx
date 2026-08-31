@@ -16,7 +16,7 @@ import { parseCodexSyntax, ParseResult, PatchConflict, extractRelationType } fro
 import { indexNaturalLines, IndexResult, Candidate } from './core/indexer';
 import { lint, LintIssue } from './core/linter';
 
-const DEFAULT_TEXT = `# Axral Codex Sample
+const DEFAULT_TEXT = `# Axral WorldCode Sample
 # Explicit Entity Declarations
 [Alice:Character:Su-ken]
 [Bob:Character:Su-ken]
@@ -34,7 +34,7 @@ BobはかつてAliceを尊敬していた。しかしOrderの教義を巡って�
 export const App: React.FC = () => {
   // Core text state
   const [editorText, setEditorText] = useState<string>(() => {
-    return localStorage.getItem('axral_codex_text') || DEFAULT_TEXT;
+    return localStorage.getItem('axral_worldcode_text') || localStorage.getItem('axral_codex_text') || DEFAULT_TEXT;
   });
 
   // Highlighted line from Linter
@@ -71,7 +71,7 @@ export const App: React.FC = () => {
 
   // Debounced pipeline
   useEffect(() => {
-    localStorage.setItem('axral_codex_text', editorText);
+    localStorage.setItem('axral_worldcode_text', editorText);
     const timer = setTimeout(() => {
       const parsed = parseCodexSyntax(editorText);
       setParseResult(parsed);
@@ -315,7 +315,7 @@ export const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'world_codex.md';
+    a.download = 'axral_worldcode.md';
     a.click();
     URL.revokeObjectURL(url);
   };

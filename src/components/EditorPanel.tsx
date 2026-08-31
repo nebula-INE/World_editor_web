@@ -260,7 +260,7 @@ export const EditorPanel: React.FC<EditorPanelProps> = ({
       <div className="h-9 px-3 bg-[#1A1D23] border-b border-[#2B2E36] flex items-center justify-between text-xs text-gray-300 select-none">
         <div className="flex items-center space-x-2">
           <FileText className="w-3.5 h-3.5 text-sky-400" />
-          <span className="font-medium text-gray-200">Codex Text Editor</span>
+          <span className="font-medium text-gray-200">Code Text Editor</span>
           <span className="text-[11px] text-gray-500 font-mono">({lineCount} lines)</span>
         </div>
 

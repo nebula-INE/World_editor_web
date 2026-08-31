@@ -63,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             A
           </div>
           <div className="flex items-baseline space-x-2">
-            <span className="font-semibold text-sm tracking-wide text-white">Axral Codex</span>
+            <span className="font-semibold text-sm tracking-wide text-white">Axral WorldCode</span>
             <span className="text-[11px] text-gray-400 font-mono hidden sm:inline-block">MVP1 (Explicit Text → Graph)</span>
           </div>
         </div>

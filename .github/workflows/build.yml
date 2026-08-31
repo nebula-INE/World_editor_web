@@ -1,4 +1,4 @@
-name: Build Axral Codex Desktop
+name: Build Axral WorldCode Desktop
 
 on:
   push:
@@ -42,35 +42,35 @@ jobs:
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         run: |
-          pyinstaller --onefile --windowed --name "AxralCodex" main.py
+          pyinstaller --onefile --windowed --name "AxralWorldCode" main.py
 
       - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
         run: |
-          pyinstaller --onefile --windowed --osx-bundle-identifier "com.axral.codex" --name "AxralCodex" main.py
+          pyinstaller --onefile --windowed --osx-bundle-identifier "com.axral.worldcode" --name "AxralWorldCode" main.py
 
       - name: Build with PyInstaller (Linux)
         if: runner.os == 'Linux'
         run: |
-          pyinstaller --onefile --windowed --name "AxralCodex" main.py
+          pyinstaller --onefile --windowed --name "AxralWorldCode" main.py
 
       - name: Upload artifact (Linux)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: AxralCodex-linux
-          path: dist/AxralCodex
+          name: AxralWorldCode-linux
+          path: dist/AxralWorldCode
 
       - name: Upload artifact (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: AxralCodex-macos
-          path: dist/AxralCodex
+          name: AxralWorldCode-macos
+          path: dist/AxralWorldCode
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: AxralCodex-windows
-          path: dist/AxralCodex.exe
+          name: AxralWorldCode-windows
+          path: dist/AxralWorldCode.exe
