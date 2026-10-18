@@ -11,6 +11,7 @@ import { ConflictModal } from './components/ConflictModal';
 
 import { WorldModel, LAYER_HIERARCHY } from './core/models';
 import { Event, newEvent } from './core/events';
+import { createProject, parseProject } from './core/project';
 import { WorldState, WorldStateEngine } from './core/world_state';
 import { parseCodexSyntax, ParseResult, PatchConflict, extractRelationType } from './core/parser';
 import { indexNaturalLines, IndexResult, Candidate } from './core/indexer';
@@ -340,29 +341,15 @@ export const App: React.FC = () => {
       if (content === undefined) return;
       if (file.name.toLowerCase().endsWith('.axral.json')) {
         try {
-          const project = JSON.parse(content);
-          if (project?.format !== 'axral-world-project' || project?.schema_version !== 1 ||
-              typeof project.text !== 'string' || !Array.isArray(project.events)) {
-            throw new Error('Axral World Project形式またはschema_versionが不正です。');
-          }
-          const restoredPositions = project.graph_positions && typeof project.graph_positions === 'object'
-            ? project.graph_positions : {};
-          const restoredEvents = project.events as Event[];
-          const restoredIgnored = Array.isArray(project.ignored_candidates) ? project.ignored_candidates : [];
-          const restoredTimeline = project.timeline && typeof project.timeline === 'object' ? project.timeline : {};
+          const project = parseProject(JSON.parse(content));
           resetDocumentSession(project.text);
           setEditorText(project.text);
-          setEvents(restoredEvents);
-          setGraphPositions(restoredPositions);
-          setIgnoredCandidateIds(new Set(restoredIgnored
-            .filter((signature: unknown) => Array.isArray(signature) && signature.length === 4 &&
-              Number.isInteger(signature[0]) && signature.slice(1).every((part: unknown) => typeof part === 'string'))
-            .map((signature: unknown[]) => JSON.stringify(signature))));
-          setTimelineMode(Boolean(restoredTimeline.mode));
-          setCurrentTimestamp(Number.isFinite(restoredTimeline.timestamp) ? Number(restoredTimeline.timestamp) : 0);
-          setVisibleLayers(new Set(Array.isArray(restoredTimeline.visible_layers)
-            ? restoredTimeline.visible_layers.filter((layer: unknown) => typeof layer === 'string')
-            : LAYER_HIERARCHY));
+          setEvents(project.events);
+          setGraphPositions(project.graph_positions);
+          setIgnoredCandidateIds(new Set(project.ignored_candidates.map((signature) => JSON.stringify(signature))));
+          setTimelineMode(project.timeline.mode);
+          setCurrentTimestamp(project.timeline.timestamp);
+          setVisibleLayers(new Set(project.timeline.visible_layers));
         } catch (error) {
           window.alert(`プロジェクトを読み込めませんでした: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -387,9 +374,7 @@ export const App: React.FC = () => {
   };
 
   const handleSaveProject = () => {
-    const project = {
-      format: 'axral-world-project',
-      schema_version: 1,
+    const project = createProject({
       text: editorText,
       events,
       graph_positions: graphPositions,
@@ -399,7 +384,7 @@ export const App: React.FC = () => {
         visible_layers: [...visibleLayers],
       },
       ignored_candidates: [...ignoredCandidateIds].map((signature) => JSON.parse(signature)),
-    };
+    });
     const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
