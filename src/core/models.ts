@@ -17,17 +17,84 @@ export function newId(prefix: string): string {
 }
 
 /**
- * Deterministic Stable Entity ID derived from entity name (SHA-1 prefix equivalent).
+ * SHA-1 of UTF-8 bytes, returned as lowercase hexadecimal.
+ *
+ * This small synchronous implementation keeps stableEntityId synchronous in
+ * both browser and desktop code. It intentionally mirrors Python's
+ * hashlib.sha1(name.encode("utf-8")).hexdigest().
+ */
+function sha1HexUtf8(value: string): string {
+  const bytes = Array.from(new TextEncoder().encode(value));
+  const bitLength = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+
+  const high = Math.floor(bitLength / 0x100000000);
+  const low = bitLength >>> 0;
+  for (let shift = 24; shift >= 0; shift -= 8) bytes.push((high >>> shift) & 0xff);
+  for (let shift = 24; shift >= 0; shift -= 8) bytes.push((low >>> shift) & 0xff);
+
+  let h0 = 0x67452301;
+  let h1 = 0xefcdab89;
+  let h2 = 0x98badcfe;
+  let h3 = 0x10325476;
+  let h4 = 0xc3d2e1f0;
+
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    const w = new Array<number>(80);
+    for (let i = 0; i < 16; i++) {
+      const j = offset + i * 4;
+      w[i] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 80; i++) {
+      const v = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+      w[i] = ((v << 1) | (v >>> 31)) >>> 0;
+    }
+
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++) {
+      let f: number, k: number;
+      if (i < 20) {
+        f = (b & c) | (~b & d);
+        k = 0x5a827999;
+      } else if (i < 40) {
+        f = b ^ c ^ d;
+        k = 0x6ed9eba1;
+      } else if (i < 60) {
+        f = (b & c) | (b & d) | (c & d);
+        k = 0x8f1bbcdc;
+      } else {
+        f = b ^ c ^ d;
+        k = 0xca62c1d6;
+      }
+      const rotateA = ((a << 5) | (a >>> 27)) >>> 0;
+      const temp = (rotateA + f + e + k + w[i]) >>> 0;
+      e = d;
+      d = c;
+      c = ((b << 30) | (b >>> 2)) >>> 0;
+      b = a;
+      a = temp;
+    }
+
+    h0 = (h0 + a) >>> 0;
+    h1 = (h1 + b) >>> 0;
+    h2 = (h2 + c) >>> 0;
+    h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0;
+  }
+
+  return [h0, h1, h2, h3, h4].map(v => v.toString(16).padStart(8, "0")).join("");
+}
+
+/**
+ * Deterministic Entity ID shared with the Python implementation:
+ * "ent_" + SHA-1(UTF-8(name)).hexdigest()[:12].
+ *
+ * Keep this function synchronous and preserve the exact UTF-8 byte semantics;
+ * project graph positions and Event references use these IDs.
  */
 export function stableEntityId(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    const char = name.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  const hex = Math.abs(hash).toString(16).padStart(8, '0') + Math.abs((hash * 31) | 0).toString(16).padStart(4, '0');
-  return `ent_${hex.substring(0, 12)}`;
+  return `ent_${sha1HexUtf8(name).slice(0, 12)}`;
 }
 
 export interface SourceRef {
