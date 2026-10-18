@@ -54,6 +54,10 @@ export const App: React.FC = () => {
   const [timelineMode, setTimelineMode] = useState<boolean>(false);
   const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(LAYER_HIERARCHY));
+  const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const handleGraphPositionsChange = useCallback((positions: Record<string, { x: number; y: number }>) => {
+    setGraphPositions(positions);
+  }, []);
   // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
   const [documentSessionId, setDocumentSessionId] = useState(0);
 
@@ -306,6 +310,7 @@ export const App: React.FC = () => {
     setIndexResult({ candidates: [], ambiguities: [] });
     setLintIssues([]);
     setEvents([]);
+    setGraphPositions({});
     setSelectedEventId(null);
     setIgnoredCandidateIds(new Set());
     setTimelineMode(false);
@@ -322,7 +327,7 @@ export const App: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (events.length > 0 && !window.confirm(
-      `現在のTimeline Event ${events.length}件はテキストファイルには保存されていません。別の文書を開くと破棄されます。続行しますか？`
+      `現在のTimeline Event ${events.length}件は現在の文書に保存されていません。読み込むデータに置き換えますか？`
     )) {
       e.target.value = '';
       return;
@@ -330,10 +335,37 @@ export const App: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      if (content !== undefined) {
-        resetDocumentSession(content);
-        setEditorText(content);
+      if (content === undefined) return;
+      if (file.name.toLowerCase().endsWith('.axral.json')) {
+        try {
+          const project = JSON.parse(content);
+          if (project?.format !== 'axral-world-project' || project?.schema_version !== 1 ||
+              typeof project.text !== 'string' || !Array.isArray(project.events)) {
+            throw new Error('Axral World Project形式またはschema_versionが不正です。');
+          }
+          const restoredPositions = project.graph_positions && typeof project.graph_positions === 'object'
+            ? project.graph_positions : {};
+          const restoredEvents = project.events as Event[];
+          const restoredIgnored = Array.isArray(project.ignored_candidates) ? project.ignored_candidates : [];
+          const restoredTimeline = project.timeline && typeof project.timeline === 'object' ? project.timeline : {};
+          resetDocumentSession(project.text);
+          setEditorText(project.text);
+          setEvents(restoredEvents);
+          setGraphPositions(restoredPositions);
+          setIgnoredCandidateIds(new Set(restoredIgnored.filter((id: unknown) => typeof id === 'string')));
+          setTimelineMode(Boolean(restoredTimeline.mode));
+          setCurrentTimestamp(Number.isFinite(restoredTimeline.timestamp) ? Number(restoredTimeline.timestamp) : 0);
+          setVisibleLayers(new Set(Array.isArray(restoredTimeline.visible_layers)
+            ? restoredTimeline.visible_layers.filter((layer: unknown) => typeof layer === 'string')
+            : LAYER_HIERARCHY));
+        } catch (error) {
+          window.alert(`プロジェクトを読み込めませんでした: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        return;
       }
+      resetDocumentSession(content);
+      setGraphPositions({});
+      setEditorText(content);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -345,6 +377,29 @@ export const App: React.FC = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'axral_worldcode.md';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveProject = () => {
+    const project = {
+      format: 'axral-world-project',
+      schema_version: 1,
+      text: editorText,
+      events,
+      graph_positions: graphPositions,
+      timeline: {
+        mode: timelineMode,
+        timestamp: currentTimestamp,
+        visible_layers: [...visibleLayers],
+      },
+      ignored_candidates: [...ignoredCandidateIds],
+    };
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'world.axral.json';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -381,7 +436,7 @@ export const App: React.FC = () => {
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
-        accept=".txt,.md,.codex"
+        accept=".txt,.md,.codex,.axral.json"
         className="hidden"
       />
 
@@ -389,6 +444,7 @@ export const App: React.FC = () => {
       <Header
         onOpenFile={handleOpenFileClick}
         onSaveFile={handleSaveFile}
+        onSaveProject={handleSaveProject}
         onExportJson={handleExportJson}
         onResolveConflicts={() => setIsConflictModalOpen(true)}
         conflictCount={parseResult.patch_conflicts.length}
@@ -414,6 +470,8 @@ export const App: React.FC = () => {
             key={documentSessionId}
             model={displayModel}
             visibleLayers={visibleLayers}
+            initialPositions={graphPositions}
+            onPositionsChange={handleGraphPositionsChange}
             onRelationTypeEdit={(refKey, oldType) => {
               setRelationEditTarget({ refKey, oldType });
             }}
