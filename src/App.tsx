@@ -54,6 +54,8 @@ export const App: React.FC = () => {
   const [timelineMode, setTimelineMode] = useState<boolean>(false);
   const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(LAYER_HIERARCHY));
+  // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
+  const [documentSessionId, setDocumentSessionId] = useState(0);
 
   // Modals state
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
@@ -296,13 +298,40 @@ export const App: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  // A text file is a new document, not an edit to the previous document's Timeline session.
+  const resetDocumentSession = (nextText: string) => {
+    const parsed = parseCodexSyntax(nextText);
+    setParseResult(parsed);
+    setEngine(new WorldStateEngine(parsed.model));
+    setIndexResult({ candidates: [], ambiguities: [] });
+    setLintIssues([]);
+    setEvents([]);
+    setSelectedEventId(null);
+    setIgnoredCandidateIds(new Set());
+    setTimelineMode(false);
+    setCurrentTimestamp(0);
+    setVisibleLayers(new Set(LAYER_HIERARCHY));
+    setHighlightedLine(null);
+    setIsAddEventOpen(false);
+    setIsConflictModalOpen(false);
+    setRelationEditTarget(null);
+    setDocumentSessionId(prev => prev + 1);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (events.length > 0 && !window.confirm(
+      `現在のTimeline Event ${events.length}件はテキストファイルには保存されていません。別の文書を開くと破棄されます。続行しますか？`
+    )) {
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (content !== undefined) {
+        resetDocumentSession(content);
         setEditorText(content);
       }
     };
@@ -336,10 +365,9 @@ export const App: React.FC = () => {
   };
 
   const handleResetSample = () => {
-    if (window.confirm('サンプルテキストに初期化しますか？（現在の編集内容は上書きされます）')) {
+    if (window.confirm(`サンプルテキストに初期化しますか？（現在の編集内容とTimeline Event ${events.length}件が破棄されます）`)) {
+      resetDocumentSession(DEFAULT_TEXT);
       setEditorText(DEFAULT_TEXT);
-      setEvents([]);
-      setIgnoredCandidateIds(new Set());
     }
   };
 
@@ -383,6 +411,7 @@ export const App: React.FC = () => {
         {/* Center: Graph View Canvas (flex-1) */}
         <div className="flex-1 h-full min-w-[320px] relative">
           <GraphView
+            key={documentSessionId}
             model={displayModel}
             visibleLayers={visibleLayers}
             onRelationTypeEdit={(refKey, oldType) => {
