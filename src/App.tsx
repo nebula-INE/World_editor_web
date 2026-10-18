@@ -299,7 +299,12 @@ export const App: React.FC = () => {
   };
 
   // A text file is a new document, not an edit to the previous document's Timeline session.
-  const resetDocumentSession = () => {
+  const resetDocumentSession = (nextText: string) => {
+    const parsed = parseCodexSyntax(nextText);
+    setParseResult(parsed);
+    setEngine(new WorldStateEngine(parsed.model));
+    setIndexResult({ candidates: [], ambiguities: [] });
+    setLintIssues([]);
     setEvents([]);
     setSelectedEventId(null);
     setIgnoredCandidateIds(new Set());
@@ -307,6 +312,9 @@ export const App: React.FC = () => {
     setCurrentTimestamp(0);
     setVisibleLayers(new Set(LAYER_HIERARCHY));
     setHighlightedLine(null);
+    setIsAddEventOpen(false);
+    setIsConflictModalOpen(false);
+    setRelationEditTarget(null);
     setDocumentSessionId(prev => prev + 1);
   };
 
@@ -323,7 +331,7 @@ export const App: React.FC = () => {
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (content !== undefined) {
-        resetDocumentSession();
+        resetDocumentSession(content);
         setEditorText(content);
       }
     };
@@ -358,7 +366,7 @@ export const App: React.FC = () => {
 
   const handleResetSample = () => {
     if (window.confirm(`サンプルテキストに初期化しますか？（現在の編集内容とTimeline Event ${events.length}件が破棄されます）`)) {
-      resetDocumentSession();
+      resetDocumentSession(DEFAULT_TEXT);
       setEditorText(DEFAULT_TEXT);
     }
   };
