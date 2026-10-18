@@ -166,7 +166,8 @@ try {
   for (const event of invalidEvents) {
     assert.throws(() => parseProject({ ...project, events: [event] }));
   }
-\n  console.log("Stable IDs and shared Axral project v1 fixture passed.");
+
+  console.log("Stable IDs and shared Axral project v1 fixture passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
 }
