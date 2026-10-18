@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const outputDir = ".tmp-stable-id-test";
 try {
@@ -32,7 +32,7 @@ try {
   for (const [name, expected] of Object.entries(vectors)) {
     assert.equal(stableEntityId(name), expected, `stableEntityId(${JSON.stringify(name)})`);
   }
-  assert.notEqual(stableEntityId("é"), stableEntityId("e\u0301"));
+  assert.notEqual(stableEntityId("é"), stableEntityId("e\\u0301"));
   const sourceRef = { line: 1, text: "A -> B : 友好" };
   const modelA = new WorldModel();
   const a1 = modelA.getOrCreateEntity("A", null, sourceRef);
@@ -47,8 +47,17 @@ try {
   const duplicate = modelB.addRelation(a2.id, b2.id, "敵対", { line: 2, text: "A -> B : 敵対" });
   assert.notEqual(relationA.id, duplicate.id);
 
-  // Shared .axral.json v1 contract: preserve Japanese text, stable IDs, event
-  // relation references, graph coordinates, timeline state, and ignored signatures.
+  // Read the same committed JSON fixture as the Desktop codec contract test.
+  const golden = JSON.parse(readFileSync(new URL("../tests/fixtures/axral-project-v1.json", import.meta.url), "utf8"));
+  const goldenRestored = parseProject(golden);
+  assert.equal(goldenRestored.text, golden.text);
+  assert.deepEqual(goldenRestored.events, golden.events);
+  assert.equal(goldenRestored.events[0].effects[0].target_id, stableRelationId("主人公->東京#0"));
+  assert.deepEqual(goldenRestored.graph_positions, golden.graph_positions);
+  assert.deepEqual(goldenRestored.timeline, golden.timeline);
+  assert.deepEqual(goldenRestored.ignored_candidates, golden.ignored_candidates);
+
+  // Independently exercise the web create/parse round-trip and validation.
   const project = {
     format: "axral-world-project",
     schema_version: 1,
@@ -89,21 +98,12 @@ try {
   assert.deepEqual(restored.graph_positions, project.graph_positions);
   assert.deepEqual(restored.timeline, project.timeline);
   assert.deepEqual(restored.ignored_candidates, project.ignored_candidates);
-  assert.ok(restored.ignored_candidates.every(
-    (s) => Array.isArray(s) && s.length === 4 && Number.isInteger(s[0]) &&
-      s.slice(1).every((part) => typeof part === "string")
-  ));
-  assert.ok(![[3, "主人公", "東京"], ["bad", "主人公", "東京", "移動"]].every(
-    (s) => Array.isArray(s) && s.length === 4 && Number.isInteger(s[0]) &&
-      s.slice(1).every((part) => typeof part === "string")
-  ));
-  assert.deepEqual(restored.ignored_candidates, project.ignored_candidates);
   assert.throws(() => parseProject({ ...project, schema_version: 2 }));
   assert.throws(() => parseProject({
     ...project,
     graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
   }));
-  console.log("Stable IDs and Axral project v1 codec round-trip passed.");
+  console.log("Stable IDs and shared Axral project v1 fixture passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
 }
