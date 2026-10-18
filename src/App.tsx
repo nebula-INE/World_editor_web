@@ -313,6 +313,12 @@ export const App: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (events.length > 0 && !window.confirm(
+      `現在のTimeline Event ${events.length}件はテキストファイルには保存されていません。別の文書を開くと破棄されます。続行しますか？`
+    )) {
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
@@ -351,7 +357,7 @@ export const App: React.FC = () => {
   };
 
   const handleResetSample = () => {
-    if (window.confirm('サンプルテキストに初期化しますか？（現在の編集内容は上書きされます）')) {
+    if (window.confirm(`サンプルテキストに初期化しますか？（現在の編集内容とTimeline Event ${events.length}件が破棄されます）`)) {
       resetDocumentSession();
       setEditorText(DEFAULT_TEXT);
     }
