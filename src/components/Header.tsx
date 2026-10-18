@@ -14,6 +14,7 @@ import {
 interface HeaderProps {
   onOpenFile: () => void;
   onSaveFile: () => void;
+  onSaveProject: () => void;
   onExportJson: () => void;
   onResolveConflicts: () => void;
   conflictCount: number;
@@ -24,6 +25,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onOpenFile,
   onSaveFile,
+  onSaveProject,
   onExportJson,
   onResolveConflicts,
   conflictCount,
@@ -86,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-full px-3 py-1.5 text-left text-gray-200 hover:bg-[#2A2E38] flex items-center space-x-2"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
-                <span>Open Codex Text...</span>
+                <span>Open Codex Text / Project...</span>
               </button>
               <button
                 id="menu-save-file"
@@ -95,6 +97,14 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Save className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Save Codex Text (.txt / .md)</span>
+              </button>
+              <button
+                id="menu-save-project"
+                onClick={() => { onSaveProject(); setFileMenuOpen(false); }}
+                className="w-full px-3 py-1.5 text-left text-gray-200 hover:bg-[#2A2E38] flex items-center space-x-2"
+              >
+                <Save className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Save Axral Project (.axral.json)</span>
               </button>
               <div className="border-t border-[#323640] my-1" />
               <button
