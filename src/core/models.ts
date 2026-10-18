@@ -97,6 +97,11 @@ export function stableEntityId(name: string): string {
   return `ent_${sha1HexUtf8(name).slice(0, 12)}`;
 }
 
+/** Relation identity follows the stable, pair-occurrence ref_key shared by both parsers. */
+export function stableRelationId(refKey: string): string {
+  return `rel_${sha1HexUtf8(refKey).slice(0, 12)}`;
+}
+
 export interface SourceRef {
   line: number;
   text: string;
@@ -195,7 +200,7 @@ export class WorldModel {
     const refKey = `${sourceName}->${targetName}#${n}`;
 
     const relation: Relation = {
-      id: newId("rel"),
+      id: stableRelationId(refKey),
       source: sourceId,
       target: targetId,
       type: relType,
