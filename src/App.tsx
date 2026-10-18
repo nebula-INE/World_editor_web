@@ -40,7 +40,7 @@ export const App: React.FC = () => {
   // Highlighted line from Linter
   const [highlightedLine, setHighlightedLine] = useState<number | null>(null);
 
-  // Ignored candidate IDs
+  // Ignored candidate signatures use the portable [line, source, target, relationType] contract.
   const [ignoredCandidateIds, setIgnoredCandidateIds] = useState<Set<string>>(new Set());
 
   // Events state (persisted across text edits)
@@ -85,7 +85,7 @@ export const App: React.FC = () => {
       // Run Secondary Indexer on natural lines
       const indexed = indexNaturalLines(parsed.natural_lines, Object.values(parsed.model.entities));
       // Filter out ignored candidates
-      const filteredCandidates = indexed.candidates.filter(c => !ignoredCandidateIds.has(c.id));
+      const filteredCandidates = indexed.candidates.filter(c => !ignoredCandidateIds.has(candidateSignatureKey(c)));
       const cleanIndexResult = { ...indexed, candidates: filteredCandidates };
       setIndexResult(cleanIndexResult);
 
@@ -151,7 +151,7 @@ export const App: React.FC = () => {
     const cand = indexResult.candidates.find(c => c.id === candId);
     if (!cand) return;
 
-    setIgnoredCandidateIds(prev => new Set(prev).add(candId));
+    setIgnoredCandidateIds(prev => new Set(prev).add(candidateSignatureKey(cand)));
 
     setEditorText(prev => {
       let text = prev;
@@ -352,7 +352,10 @@ export const App: React.FC = () => {
           setEditorText(project.text);
           setEvents(restoredEvents);
           setGraphPositions(restoredPositions);
-          setIgnoredCandidateIds(new Set(restoredIgnored.filter((id: unknown) => typeof id === 'string')));
+          setIgnoredCandidateIds(new Set(restoredIgnored
+            .filter((signature: unknown) => Array.isArray(signature) && signature.length === 4 &&
+              Number.isInteger(signature[0]) && signature.slice(1).every((part: unknown) => typeof part === 'string'))
+            .map((signature: unknown[]) => JSON.stringify(signature))));
           setTimelineMode(Boolean(restoredTimeline.mode));
           setCurrentTimestamp(Number.isFinite(restoredTimeline.timestamp) ? Number(restoredTimeline.timestamp) : 0);
           setVisibleLayers(new Set(Array.isArray(restoredTimeline.visible_layers)
@@ -393,7 +396,7 @@ export const App: React.FC = () => {
         timestamp: currentTimestamp,
         visible_layers: [...visibleLayers],
       },
-      ignored_candidates: [...ignoredCandidateIds],
+      ignored_candidates: [...ignoredCandidateIds].map((signature) => JSON.parse(signature)),
     };
     const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -554,3 +557,8 @@ function escapeRegex(str: string) {
 }
 
 export default App;
+
+
+function candidateSignatureKey(candidate: Candidate): string {
+  return JSON.stringify([candidate.line, candidate.source_name, candidate.target_name, candidate.rel_type]);
+}
