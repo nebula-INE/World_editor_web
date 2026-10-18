@@ -17,6 +17,6 @@ jobs:
         with:
           node-version: 20
       - name: Install dependencies
-        run: npm ci
+        run: npm install
       - name: Test shared project fixture
         run: node scripts/test-stable-entity-ids.mjs
