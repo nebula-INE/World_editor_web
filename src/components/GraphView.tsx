@@ -30,21 +30,29 @@ interface GraphViewProps {
   model: WorldModel | WorldState;
   visibleLayers?: Set<string> | null;
   onRelationTypeEdit: (refKey: string, oldType: string) => void;
+  initialPositions?: Record<string, { x: number; y: number }>;
+  onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
   model,
   visibleLayers,
   onRelationTypeEdit,
+  initialPositions,
+  onPositionsChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() => initialPositions || {});
   const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [hasFit, setHasFit] = useState(false);
   const [dragMoved, setDragMoved] = useState(false);
+
+  useEffect(() => {
+    onPositionsChange?.(positions);
+  }, [positions, onPositionsChange]);
 
   // Filter entities by visible layer
   const allEntities = Object.values(model.entities);
