@@ -310,6 +310,7 @@ export const App: React.FC = () => {
     setIndexResult({ candidates: [], ambiguities: [] });
     setLintIssues([]);
     setEvents([]);
+    setGraphPositions({});
     setSelectedEventId(null);
     setIgnoredCandidateIds(new Set());
     setTimelineMode(false);
@@ -435,7 +436,7 @@ export const App: React.FC = () => {
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
-        accept=".txt,.md,.codex,.json,.axral.json"
+        accept=".txt,.md,.codex,.axral.json"
         className="hidden"
       />
 
