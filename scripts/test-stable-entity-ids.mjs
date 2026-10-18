@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { rmSync } from "node:fs";
+import { renameSync, rmSync } from "node:fs";
 
 const outputDir = ".tmp-stable-id-test";
 try {
@@ -15,8 +15,9 @@ try {
     "--outDir", outputDir,
   ], { stdio: "inherit" });
 
+  renameSync(outputDir + "/models.js", outputDir + "/models.cjs");
   const require = createRequire(import.meta.url);
-  const { stableEntityId } = require("../" + outputDir + "/models.js");
+  const { stableEntityId } = require("../" + outputDir + "/models.cjs");
   const vectors = {
     A: "ent_6dcd4ce23d88",
     B: "ent_ae4f281df5a5",
