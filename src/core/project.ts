@@ -1,6 +1,6 @@
 /** Shared .axral.json v1 project codec. Kept separate from React handlers for direct testing. */
-import type { Event } from './events';
-import { LAYER_HIERARCHY } from './models';
+import type { Effect, Event } from './events';
+import { LAYER_HIERARCHY, SCHEMA_VERSION } from './models';
 
 export const PROJECT_FORMAT = 'axral-world-project';
 export const PROJECT_SCHEMA_VERSION = 1;
@@ -34,6 +34,60 @@ function isIgnoredSignature(value: unknown): value is [number, string, string, s
     value.slice(1).every((part) => typeof part === 'string');
 }
 
+/** Normalize Event/Effect optional fields the same way as Desktop Event.from_dict. */
+function normalizeEvent(value: unknown, index: number): Event {
+  if (!isRecord(value) ||
+      typeof value.id !== 'string' ||
+      typeof value.timestamp !== 'number' || !Number.isFinite(value.timestamp) ||
+      typeof value.type !== 'string') {
+    throw new Error(`events[${index}]のid・timestamp・typeが不正です。`);
+  }
+
+  const participants = value.participants === undefined ? [] : value.participants;
+  const effects = value.effects === undefined ? [] : value.effects;
+  if (!Array.isArray(participants) || !participants.every((part) => typeof part === 'string')) {
+    throw new Error(`events[${index}].participantsは文字列配列である必要があります。`);
+  }
+  if (!Array.isArray(effects)) {
+    throw new Error(`events[${index}].effectsは配列である必要があります。`);
+  }
+
+  const normalizedEffects: Effect[] = effects.map((effect, effectIndex) => {
+    if (!isRecord(effect) || typeof effect.kind !== 'string') {
+      throw new Error(`events[${index}].effects[${effectIndex}].kindが不正です。`);
+    }
+    const targetId = effect.target_id === undefined ? null : effect.target_id;
+    const payload = effect.payload === undefined ? {} : effect.payload;
+    if (targetId !== null && typeof targetId !== 'string') {
+      throw new Error(`events[${index}].effects[${effectIndex}].target_idが不正です。`);
+    }
+    if (!isRecord(payload)) {
+      throw new Error(`events[${index}].effects[${effectIndex}].payloadはオブジェクトである必要があります。`);
+    }
+    return { kind: effect.kind, target_id: targetId, payload };
+  });
+
+  const isSnapshotPoint = value.is_snapshot_point === undefined ? false : value.is_snapshot_point;
+  const schemaVersion = value.schema_version === undefined ? SCHEMA_VERSION : value.schema_version;
+  const metadata = value.metadata === undefined ? {} : value.metadata;
+  if (typeof isSnapshotPoint !== 'boolean' ||
+      typeof schemaVersion !== 'number' || !Number.isInteger(schemaVersion) ||
+      !isRecord(metadata)) {
+    throw new Error(`events[${index}]の任意フィールドが不正です。`);
+  }
+
+  return {
+    id: value.id,
+    timestamp: value.timestamp,
+    type: value.type,
+    participants: [...participants],
+    effects: normalizedEffects,
+    is_snapshot_point: isSnapshotPoint,
+    schema_version: schemaVersion,
+    metadata,
+  };
+}
+
 export function createProject(input: Omit<AxralProjectV1, 'format' | 'schema_version'>): AxralProjectV1 {
   return {
     format: PROJECT_FORMAT,
@@ -53,6 +107,7 @@ export function parseProject(value: unknown): AxralProjectV1 {
   if (typeof value.text !== 'string' || !Array.isArray(value.events)) {
     throw new Error('textまたはeventsフィールドが不正です。');
   }
+  const events = value.events.map((event, index) => normalizeEvent(event, index));
 
   const rawPositions = value.graph_positions === undefined ? {} : value.graph_positions;
   if (!isRecord(rawPositions)) throw new Error('graph_positionsはオブジェクトである必要があります。');
@@ -83,7 +138,7 @@ export function parseProject(value: unknown): AxralProjectV1 {
     format: PROJECT_FORMAT,
     schema_version: PROJECT_SCHEMA_VERSION,
     text: value.text,
-    events: value.events as Event[],
+    events,
     graph_positions: positions,
     timeline,
     ignored_candidates: rawIgnored.filter(isIgnoredSignature).map((signature) => [...signature] as [number, string, string, string]),

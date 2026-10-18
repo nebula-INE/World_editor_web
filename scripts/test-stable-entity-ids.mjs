@@ -103,6 +103,41 @@ try {
     ...project,
     graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
   }));
+  // Normalize optional Event/Effect fields exactly as Desktop does on import.
+  const legacyEvent = parseProject({
+    format: "axral-world-project",
+    schema_version: 1,
+    text: "legacy",
+    events: [{ id: "evt_legacy", timestamp: 0, type: "Chapter" }],
+  });
+  assert.deepEqual(legacyEvent.events[0], {
+    id: "evt_legacy",
+    timestamp: 0,
+    type: "Chapter",
+    participants: [],
+    effects: [],
+    is_snapshot_point: false,
+    schema_version: 1,
+    metadata: {},
+  });
+  assert.throws(() => parseProject({
+    format: "axral-world-project",
+    schema_version: 1,
+    text: "bad",
+    events: [{ timestamp: 0, type: "Chapter" }],
+  }));
+  assert.throws(() => parseProject({
+    format: "axral-world-project",
+    schema_version: 1,
+    text: "bad",
+    events: [{
+      id: "evt_bad",
+      timestamp: 0,
+      type: "Chapter",
+      effects: [{ payload: {} }],
+    }],
+  }));
+
   console.log("Stable IDs and shared Axral project v1 fixture passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
