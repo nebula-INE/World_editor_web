@@ -146,7 +146,27 @@ try {
     }],
   }));
 
-  console.log("Stable IDs and shared Axral project v1 fixture passed.");
+
+  const validEvent = project.events[0];
+  const invalidEvents = [
+    { ...validEvent, id: null },
+    { ...validEvent, timestamp: Number.NaN },
+    { ...validEvent, type: 7 },
+    { ...validEvent, participants: ["主人公", 3] },
+    { ...validEvent, participants: {} },
+    { ...validEvent, effects: {} },
+    { ...validEvent, effects: [{ kind: 4 }] },
+    { ...validEvent, effects: [{ kind: "relation_status", target_id: 42 }] },
+    { ...validEvent, effects: [{ kind: "relation_status", payload: [] }] },
+    { ...validEvent, effects: [null] },
+    { ...validEvent, is_snapshot_point: "true" },
+    { ...validEvent, schema_version: 1.5 },
+    { ...validEvent, metadata: [] },
+  ];
+  for (const event of invalidEvents) {
+    assert.throws(() => parseProject({ ...project, events: [event] }));
+  }
+\n  console.log("Stable IDs and shared Axral project v1 fixture passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
 }
