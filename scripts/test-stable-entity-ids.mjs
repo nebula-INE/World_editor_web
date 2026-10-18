@@ -30,7 +30,20 @@ try {
     assert.equal(stableEntityId(name), expected, `stableEntityId(${JSON.stringify(name)})`);
   }
   assert.notEqual(stableEntityId("é"), stableEntityId("e\u0301"));
-  console.log("Stable Entity ID vectors passed.");
+  const sourceRef = { line: 1, text: "A -> B : 友好" };
+  const modelA = new WorldModel();
+  const a1 = modelA.getOrCreateEntity("A", null, sourceRef);
+  const b1 = modelA.getOrCreateEntity("B", null, sourceRef);
+  const relationA = modelA.addRelation(a1.id, b1.id, "友好", sourceRef);
+  const modelB = new WorldModel();
+  const a2 = modelB.getOrCreateEntity("A", null, sourceRef);
+  const b2 = modelB.getOrCreateEntity("B", null, sourceRef);
+  const relationB = modelB.addRelation(a2.id, b2.id, "友好", sourceRef);
+  assert.equal(relationA.id, relationB.id);
+  assert.equal(relationA.id, stableRelationId("A->B#0"));
+  const duplicate = modelB.addRelation(a2.id, b2.id, "敵対", { line: 2, text: "A -> B : 敵対" });
+  assert.notEqual(relationA.id, duplicate.id);
+  console.log("Stable Entity and Relation ID vectors passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
 }
