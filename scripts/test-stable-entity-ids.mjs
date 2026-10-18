@@ -32,7 +32,7 @@ try {
   for (const [name, expected] of Object.entries(vectors)) {
     assert.equal(stableEntityId(name), expected, `stableEntityId(${JSON.stringify(name)})`);
   }
-  assert.notEqual(stableEntityId("é"), stableEntityId("e\\u0301"));
+  assert.notEqual(stableEntityId("é"), stableEntityId("e\u0301"));
   const sourceRef = { line: 1, text: "A -> B : 友好" };
   const modelA = new WorldModel();
   const a1 = modelA.getOrCreateEntity("A", null, sourceRef);
