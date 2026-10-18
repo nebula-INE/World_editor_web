@@ -17,7 +17,7 @@ try {
 
   renameSync(outputDir + "/models.js", outputDir + "/models.cjs");
   const require = createRequire(import.meta.url);
-  const { stableEntityId } = require("../" + outputDir + "/models.cjs");
+  const { stableEntityId, stableRelationId, WorldModel } = require("../" + outputDir + "/models.cjs");
   const vectors = {
     A: "ent_6dcd4ce23d88",
     B: "ent_ae4f281df5a5",
