@@ -169,7 +169,9 @@ export const App: React.FC = () => {
 
   // Candidate Ignored
   const handleCandidateIgnore = (candId: string) => {
-    setIgnoredCandidateIds(prev => new Set(prev).add(candId));
+    const cand = indexResult.candidates.find(c => c.id === candId);
+    if (!cand) return;
+    setIgnoredCandidateIds(prev => new Set(prev).add(candidateSignatureKey(cand)));
   };
 
   // Relation Type Edit Requested from Graph Canvas (§10.2 Patch-style Sync)
