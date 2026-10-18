@@ -56,6 +56,14 @@ try {
   assert.deepEqual(goldenRestored.graph_positions, golden.graph_positions);
   assert.deepEqual(goldenRestored.timeline, golden.timeline);
   assert.deepEqual(goldenRestored.ignored_candidates, golden.ignored_candidates);
+  const goldenRebuilt = createProject({
+    text: goldenRestored.text,
+    events: goldenRestored.events,
+    graph_positions: goldenRestored.graph_positions,
+    timeline: goldenRestored.timeline,
+    ignored_candidates: goldenRestored.ignored_candidates,
+  });
+  assert.deepEqual(goldenRebuilt, golden, "shared fixture must survive Web codec round-trip");
 
   // Independently exercise the web create/parse round-trip and validation.
   const project = {
