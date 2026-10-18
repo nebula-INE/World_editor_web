@@ -54,6 +54,8 @@ export const App: React.FC = () => {
   const [timelineMode, setTimelineMode] = useState<boolean>(false);
   const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(LAYER_HIERARCHY));
+  // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
+  const [documentSessionId, setDocumentSessionId] = useState(0);
 
   // Modals state
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
@@ -296,6 +298,18 @@ export const App: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  // A text file is a new document, not an edit to the previous document's Timeline session.
+  const resetDocumentSession = () => {
+    setEvents([]);
+    setSelectedEventId(null);
+    setIgnoredCandidateIds(new Set());
+    setTimelineMode(false);
+    setCurrentTimestamp(0);
+    setVisibleLayers(new Set(LAYER_HIERARCHY));
+    setHighlightedLine(null);
+    setDocumentSessionId(prev => prev + 1);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -303,6 +317,7 @@ export const App: React.FC = () => {
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (content !== undefined) {
+        resetDocumentSession();
         setEditorText(content);
       }
     };
@@ -337,9 +352,8 @@ export const App: React.FC = () => {
 
   const handleResetSample = () => {
     if (window.confirm('サンプルテキストに初期化しますか？（現在の編集内容は上書きされます）')) {
+      resetDocumentSession();
       setEditorText(DEFAULT_TEXT);
-      setEvents([]);
-      setIgnoredCandidateIds(new Set());
     }
   };
 
@@ -383,6 +397,7 @@ export const App: React.FC = () => {
         {/* Center: Graph View Canvas (flex-1) */}
         <div className="flex-1 h-full min-w-[320px] relative">
           <GraphView
+            key={documentSessionId}
             model={displayModel}
             visibleLayers={visibleLayers}
             onRelationTypeEdit={(refKey, oldType) => {
