@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { renameSync, rmSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 
 const outputDir = ".tmp-stable-id-test";
 try {
   execFileSync("npx", [
     "tsc",
     "src/core/models.ts",
+    "src/core/events.ts",
+    "src/core/project.ts",
     "--target", "ES2020",
     "--module", "commonjs",
     "--lib", "ES2020,DOM",
@@ -15,9 +17,10 @@ try {
     "--outDir", outputDir,
   ], { stdio: "inherit" });
 
-  renameSync(outputDir + "/models.js", outputDir + "/models.cjs");
+  writeFileSync(outputDir + "/package.json", JSON.stringify({ type: "commonjs" }));
   const require = createRequire(import.meta.url);
-  const { stableEntityId, stableRelationId, WorldModel } = require("../" + outputDir + "/models.cjs");
+  const { stableEntityId, stableRelationId, WorldModel } = require("../" + outputDir + "/models.js");
+  const { createProject, parseProject } = require("../" + outputDir + "/project.js");
   const vectors = {
     A: "ent_6dcd4ce23d88",
     B: "ent_ae4f281df5a5",
@@ -71,7 +74,13 @@ try {
     timeline: { mode: true, timestamp: 42, visible_layers: ["Su-ken", "Kan-ken"] },
     ignored_candidates: [[3, "主人公", "東京", "移動"]],
   };
-  const restored = JSON.parse(JSON.stringify(project));
+  const restored = parseProject(JSON.parse(JSON.stringify(createProject({
+    text: project.text,
+    events: project.events,
+    graph_positions: project.graph_positions,
+    timeline: project.timeline,
+    ignored_candidates: project.ignored_candidates,
+  }))));
   assert.equal(restored.format, "axral-world-project");
   assert.equal(restored.schema_version, 1);
   assert.equal(restored.text, project.text);
@@ -88,7 +97,13 @@ try {
     (s) => Array.isArray(s) && s.length === 4 && Number.isInteger(s[0]) &&
       s.slice(1).every((part) => typeof part === "string")
   ));
-  console.log("Stable IDs and Axral project v1 persistence contract passed.");
+  assert.deepEqual(restored.ignored_candidates, project.ignored_candidates);
+  assert.throws(() => parseProject({ ...project, schema_version: 2 }));
+  assert.throws(() => parseProject({
+    ...project,
+    graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
+  }));
+  console.log("Stable IDs and Axral project v1 codec round-trip passed.");
 } finally {
   rmSync(outputDir, { recursive: true, force: true });
 }
