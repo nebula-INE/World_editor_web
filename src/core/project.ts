@@ -126,7 +126,7 @@ export function parseProject(value: unknown): AxralProjectV1 {
   const timeline = {
     mode: typeof rawTimeline.mode === 'boolean' ? rawTimeline.mode : false,
     timestamp: typeof rawTimeline.timestamp === 'number' && Number.isFinite(rawTimeline.timestamp)
-      ? Math.trunc(rawTimeline.timestamp) : 0,
+      ? rawTimeline.timestamp : 0,
     visible_layers: Array.isArray(rawTimeline.visible_layers)
       ? rawTimeline.visible_layers.filter((layer: unknown): layer is string => typeof layer === 'string')
       : [...LAYER_HIERARCHY],
