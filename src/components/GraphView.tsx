@@ -61,6 +61,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     : allEntities;
 
   const visibleEntityIds = new Set(entities.map(e => e.id));
+  const entityIdsKey = JSON.stringify(entities.map(entity => entity.id));
   const relations = Object.values(model.relations).filter(
     r => visibleEntityIds.has(r.source) && visibleEntityIds.has(r.target)
   );
@@ -95,7 +96,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return changed ? next : prev;
     });
 
-  }, [entities.length]);
+  }, [entityIdsKey]);
 
   // Fit to View Calculation
   const fitToView = useCallback(() => {
