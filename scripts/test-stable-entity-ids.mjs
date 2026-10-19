@@ -107,11 +107,27 @@ try {
   assert.deepEqual(restored.timeline, project.timeline);
   assert.deepEqual(restored.ignored_candidates, project.ignored_candidates);
   assert.throws(() => parseProject({ ...project, schema_version: 2 }));
+  const ignoredBoundary = parseProject({
+    ...project,
+    ignored_candidates: [
+      [Number.MAX_SAFE_INTEGER, "主人公", "東京", "移動"],
+      [Number.MAX_SAFE_INTEGER + 1, "主人公", "東京", "移動"],
+    ],
+  });
+  assert.deepEqual(ignoredBoundary.ignored_candidates, [
+    [Number.MAX_SAFE_INTEGER, "主人公", "東京", "移動"],
+  ], "ignored candidate indices must use safe integers");
   const fractionalTimeline = parseProject({ ...project, timeline: { ...project.timeline, timestamp: 42.9 } });
   assert.equal(fractionalTimeline.timeline.timestamp, 42, "Timeline timestamps are integer-normalized like Desktop");
+  const unsafeTimeline = parseProject({ ...project, timeline: { ...project.timeline, timestamp: Number.MAX_SAFE_INTEGER + 1 } });
+  assert.equal(unsafeTimeline.timeline.timestamp, 0, "unsafe integral Timeline timestamps normalize to zero");
   assert.throws(() => parseProject({
     ...project,
     graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
+  }));
+  assert.throws(() => parseProject({
+    ...project,
+    graph_positions: { [stableEntityId("主人公")]: { x: Number.MAX_SAFE_INTEGER + 1, y: 0 } },
   }));
   // Normalize optional Event/Effect fields exactly as Desktop does on import.
   const legacyEvent = parseProject({
@@ -153,6 +169,7 @@ try {
   const invalidEvents = [
     { ...validEvent, id: null },
     { ...validEvent, timestamp: Number.NaN },
+    { ...validEvent, timestamp: Number.MAX_SAFE_INTEGER + 1 },
     { ...validEvent, type: 7 },
     { ...validEvent, participants: ["主人公", 3] },
     { ...validEvent, participants: {} },
