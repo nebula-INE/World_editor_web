@@ -28,9 +28,15 @@ function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Match Desktop's finite-number validation, including safe-integer limits. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) &&
+    (!Number.isInteger(value) || Number.isSafeInteger(value));
+}
+
 function isIgnoredSignature(value: unknown): value is [number, string, string, string] {
   return Array.isArray(value) && value.length === 4 &&
-    Number.isInteger(value[0]) &&
+    Number.isSafeInteger(value[0]) &&
     value.slice(1).every((part) => typeof part === 'string');
 }
 
@@ -38,7 +44,7 @@ function isIgnoredSignature(value: unknown): value is [number, string, string, s
 function normalizeEvent(value: unknown, index: number): Event {
   if (!isRecord(value) ||
       typeof value.id !== 'string' ||
-      typeof value.timestamp !== 'number' || !Number.isFinite(value.timestamp) ||
+      !isFiniteNumber(value.timestamp) ||
       typeof value.type !== 'string') {
     throw new Error(`events[${index}]のid・timestamp・typeが不正です。`);
   }
@@ -71,7 +77,7 @@ function normalizeEvent(value: unknown, index: number): Event {
   const schemaVersion = value.schema_version === undefined ? SCHEMA_VERSION : value.schema_version;
   const metadata = value.metadata === undefined ? {} : value.metadata;
   if (typeof isSnapshotPoint !== 'boolean' ||
-      typeof schemaVersion !== 'number' || !Number.isInteger(schemaVersion) ||
+      !isFiniteNumber(schemaVersion) || !Number.isInteger(schemaVersion) ||
       !isRecord(metadata)) {
     throw new Error(`events[${index}]の任意フィールドが不正です。`);
   }
@@ -114,8 +120,8 @@ export function parseProject(value: unknown): AxralProjectV1 {
   const positions: Record<string, GraphPosition> = {};
   for (const [entityId, rawPoint] of Object.entries(rawPositions)) {
     if (!isRecord(rawPoint) ||
-        typeof rawPoint.x !== 'number' || !Number.isFinite(rawPoint.x) ||
-        typeof rawPoint.y !== 'number' || !Number.isFinite(rawPoint.y)) {
+        !isFiniteNumber(rawPoint.x) ||
+        !isFiniteNumber(rawPoint.y)) {
       throw new Error(`graph_positions.${entityId}の座標が不正です。`);
     }
     positions[entityId] = { x: rawPoint.x, y: rawPoint.y };
@@ -125,7 +131,7 @@ export function parseProject(value: unknown): AxralProjectV1 {
   if (!isRecord(rawTimeline)) throw new Error('timelineはオブジェクトである必要があります。');
   const timeline = {
     mode: typeof rawTimeline.mode === 'boolean' ? rawTimeline.mode : false,
-    timestamp: typeof rawTimeline.timestamp === 'number' && Number.isFinite(rawTimeline.timestamp)
+    timestamp: isFiniteNumber(rawTimeline.timestamp)
       ? Math.trunc(rawTimeline.timestamp) : 0,
     visible_layers: Array.isArray(rawTimeline.visible_layers)
       ? rawTimeline.visible_layers.filter((layer: unknown): layer is string => typeof layer === 'string')
