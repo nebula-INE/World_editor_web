@@ -107,6 +107,8 @@ try {
   assert.deepEqual(restored.timeline, project.timeline);
   assert.deepEqual(restored.ignored_candidates, project.ignored_candidates);
   assert.throws(() => parseProject({ ...project, schema_version: 2 }));
+  const fractionalTimeline = parseProject({ ...project, timeline: { ...project.timeline, timestamp: 42.9 } });
+  assert.equal(fractionalTimeline.timeline.timestamp, 42, "Timeline timestamps are integer-normalized like Desktop");
   assert.throws(() => parseProject({
     ...project,
     graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
