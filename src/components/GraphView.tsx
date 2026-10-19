@@ -95,10 +95,6 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return changed ? next : prev;
     });
 
-    if (!hasFit && containerRef.current && entities.length > 0) {
-      setTimeout(() => fitToView(), 50);
-      setHasFit(true);
-    }
   }, [entities.length]);
 
   // Fit to View Calculation
@@ -135,6 +131,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
       y: rect.height / 2 - centerY * newScale,
     });
   }, [entities, positions]);
+
+  // Fit only after the positions state has been committed. Scheduling fit from the
+  // entity-initialization effect can capture stale positions and permanently skip
+  // the first fit while marking hasFit=true.
+  useEffect(() => {
+    if (hasFit || entities.length === 0 || !containerRef.current) return;
+    if (!entities.every(entity => positions[entity.id])) return;
+
+    fitToView();
+    setHasFit(true);
+  }, [entities, positions, hasFit, fitToView]);
 
   // Move camera by delta (for D-Pad, Arrow keys, etc.)
   const panBy = useCallback((dx: number, dy: number) => {
