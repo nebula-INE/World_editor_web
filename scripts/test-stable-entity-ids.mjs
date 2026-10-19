@@ -109,6 +109,25 @@ try {
   assert.throws(() => parseProject({ ...project, schema_version: 2 }));
   const fractionalTimeline = parseProject({ ...project, timeline: { ...project.timeline, timestamp: 42.9 } });
   assert.equal(fractionalTimeline.timeline.timestamp, 42, "Timeline timestamps are integer-normalized like Desktop");
+  const unsafeInteger = Number.MAX_SAFE_INTEGER + 1;
+  assert.throws(() => parseProject({
+    ...project,
+    events: [{ ...project.events[0], timestamp: unsafeInteger }],
+  }), "Event timestamps outside JavaScript's safe-integer range must match Desktop rejection");
+  assert.throws(() => parseProject({
+    ...project,
+    graph_positions: { [stableEntityId("主人公")]: { x: unsafeInteger, y: 0 } },
+  }), "Graph coordinates outside the safe-integer range must match Desktop rejection");
+  const unsafeTimeline = parseProject({
+    ...project,
+    timeline: { ...project.timeline, timestamp: unsafeInteger },
+  });
+  assert.equal(unsafeTimeline.timeline.timestamp, 0, "unsafe Timeline timestamps normalize to zero like Desktop");
+  const unsafeIgnored = parseProject({
+    ...project,
+    ignored_candidates: [[unsafeInteger, "主人公", "東京", "移動"]],
+  });
+  assert.deepEqual(unsafeIgnored.ignored_candidates, [], "unsafe ignored-candidate line numbers are discarded like Desktop");
   assert.throws(() => parseProject({
     ...project,
     graph_positions: { [stableEntityId("主人公")]: { x: Number.NaN, y: 0 } },
