@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:project-contract": "node scripts/test-stable-entity-ids.mjs",
+    "test:project-contract": "node scripts/test-stable-entity-ids.mjs && node scripts/test-story-contract.mjs",
     "test:project-ui": "node scripts/test-project-ui-roundtrip.mjs"
   },
   "dependencies": {
