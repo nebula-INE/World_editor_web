@@ -8,6 +8,7 @@ import { StatusBar } from './components/StatusBar';
 import { AddEventModal } from './components/AddEventModal';
 import { RelationEditModal } from './components/RelationEditModal';
 import { ConflictModal } from './components/ConflictModal';
+import { StoryAuthoring } from './components/StoryAuthoring';
 
 import { WorldModel, LAYER_HIERARCHY } from './core/models';
 import { Event, newEvent } from './core/events';
@@ -61,6 +62,8 @@ export const App: React.FC = () => {
   }, []);
   // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
   const [documentSessionId, setDocumentSessionId] = useState(0);
+
+  const [storyAuthoringOpen, setStoryAuthoringOpen] = useState(false);
 
   // Modals state
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
@@ -440,6 +443,7 @@ export const App: React.FC = () => {
         conflictCount={parseResult.patch_conflicts.length}
         onInsertTemplate={handleInsertTemplate}
         onResetSample={handleResetSample}
+        onOpenStoryAuthoring={() => setStoryAuthoringOpen(true)}
       />
 
       {/* Main 3-Column Split Area */}
@@ -507,6 +511,8 @@ export const App: React.FC = () => {
         isTimelineMode={timelineMode}
         currentTimestamp={currentTimestamp}
       />
+
+      {storyAuthoringOpen && <StoryAuthoring onClose={() => setStoryAuthoringOpen(false)} />}
 
       {/* Modals */}
       <AddEventModal
