@@ -13,7 +13,7 @@ try {
   const text = serializeStoryFile(fixture);
   assert.deepEqual(parseStoryFileText(text), fixture);
   assert.ok(text.endsWith("\n"), "serialized story file must end with a newline");
-  assert.match(text, /日本語/);
+  assert.match(text, /夜。雨/);
   assert.equal(storyFilename("第一話 / 始まり"), "第一話 _ 始まり.axral-story.json");
   assert.equal(storyFilename("..."), "untitled.axral-story.json");
   assert.ok(STORY_FILE_SUFFIX.endsWith(".axral-story.json"));
