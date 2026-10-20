@@ -19,4 +19,4 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Test shared project fixture
-        run: node scripts/test-stable-entity-ids.mjs
+        run: npm run test:project-contract
