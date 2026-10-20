@@ -28,7 +28,7 @@ export const StoryAuthoring: React.FC<Props> = ({onClose}) => {
     try { const parsed=parseStoryFileText(await file.text());setStory(parsed);savedSnapshot.current=serializeStoryFile(parsed);setSelectedChapter(parsed.chapters[0]?.id??null);setSelectedScene(parsed.chapters[0]?.scenes[0]?.id??null);setMessage(`読み込みました: ${file.name}`); }
     catch(e) { setMessage(e instanceof Error?e.message:String(e)); }
   };
-  const save = () => { try { const serialized=serializeStoryFile(story);const blob=new Blob([serialized],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=storyFilename(story.title);a.click();URL.revokeObjectURL(url);savedSnapshot.current=serialized;setMessage('物語ファイルを書き出しました。'); } catch(e) {setMessage(e instanceof Error?e.message:String(e));} };
+  const save = () => { try { const serialized=serializeStoryFile(story);const blob=new Blob([serialized],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=storyFilename(story.title);a.style.display='none';document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);savedSnapshot.current=serialized;setMessage('物語ファイルを書き出しました。'); } catch(e) {setMessage(e instanceof Error?e.message:String(e));} };
   const move = (index:number, delta:number, length:number, fn: (to:number)=>void) => {const to=index+delta;if(to>=0&&to<length)fn(to);};
   return <div className="fixed inset-0 z-[100] flex flex-col bg-[#121418] text-gray-200">
     <input ref={input} type="file" accept=".axral-story.json,application/json" className="hidden" onChange={onFile}/>
