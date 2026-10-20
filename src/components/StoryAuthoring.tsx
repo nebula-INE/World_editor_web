@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { X, FilePlus2, FolderOpen, Save, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
-import { parseStory, WORK_KINDS, STORY_BLOCK_TYPES, type AxralStoryV1, type StoryBlock, type WorkKind, type StoryBlockType } from '../core/story';
+import { parseStory, WORK_KINDS, STORY_BLOCK_TYPES, type AxralStoryV1, type WorkKind, type StoryBlockType } from '../core/story';
 import { addChapter, renameChapter, reorderChapter, deleteChapter, addScene, renameScene, reorderScene, deleteScene, addBlock, updateBlock, reorderBlock, deleteBlock } from '../core/story-editing';
 import { parseStoryFileText, serializeStoryFile, storyFilename } from '../core/story-file';
 
