@@ -23,5 +23,35 @@ try {
  assert.equal(e.deleteChapter(added,"chapter_002").chapters.length,1);
  assert.throws(()=>e.addChapter(fixture,"chapter_001","重複ID"),/重複/);
  assert.throws(()=>e.reorderChapter(fixture,"chapter_001",3),/範囲外/);
- console.log("Axral Story editing operations passed.");
+
+ // Sequential edit -> reorder -> delete -> codec round-trip regression.
+ const { serializeStory, parseStory } = require("../" + out + "/story.js");
+ const originalIds = fixture.chapters[0].scenes[0].blocks.map(b => b.id);
+ const firstId = originalIds[0], secondId = originalIds[1];
+ let sequential = e.updateBlock(fixture, firstId, {
+   type: "dialogue",
+   text: "「こんにちは。\\nまた会えたね。」",
+   character_id: "char_mio"
+ });
+ sequential = e.reorderBlock(sequential, firstId, sequential.chapters[0].scenes[0].blocks.length - 1);
+ sequential = e.deleteBlock(sequential, secondId);
+ const roundTripped = parseStory(JSON.parse(serializeStory(sequential)));
+ const roundTripScene = roundTripped.chapters[0].scenes[0];
+ const edited = roundTripScene.blocks.find(b => b.id === firstId);
+ assert.equal(edited.type, "dialogue");
+ assert.equal(edited.text, "「こんにちは。\\nまた会えたね。」");
+ assert.equal(edited.character_id, "char_mio");
+ assert.ok(!roundTripScene.blocks.some(b => b.id === secondId));
+ assert.deepEqual(roundTripScene.blocks.map(b => b.order), roundTripScene.blocks.map((_, i) => i));
+ assert.deepEqual(fixture.chapters[0].scenes[0].blocks.map(b => b.id), originalIds);
+ let deleted = e.addChapter(fixture, "chapter_002", "削除対象");
+ deleted = e.addScene(deleted, "chapter_002", "scene_002", "削除対象シーン");
+ deleted = e.addBlock(deleted, "scene_002", {id:"block_999",type:"prose",text:"一時的な本文"});
+ deleted = e.deleteBlock(deleted, "block_999");
+ deleted = e.deleteScene(deleted, "scene_002");
+ deleted = e.deleteChapter(deleted, "chapter_002");
+ assert.deepEqual(deleted, fixture);
+ assert.throws(() => e.reorderBlock(fixture, originalIds[0], true), /範囲外/);
+
+ console.log("Axral Story editing operations and sequential regressions passed.");
 } finally {rmSync(out,{recursive:true,force:true})}
