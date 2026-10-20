@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const root = process.cwd();
-const fixturePath = path.join(root, "tests/fixtures/axral-project-v1.json");
-const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+const sourceFixturePath = path.join(root, "tests/fixtures/axral-project-v1.json");
+const fixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
 const tempDir = await mkdtemp(path.join(tmpdir(), "axral-project-ui-"));
+const fixturePath = path.join(tempDir, "Desktop-fixture.axral.json");
+await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
 const port = 4179;
 const server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
   cwd: root,
