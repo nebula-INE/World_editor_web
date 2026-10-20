@@ -27,5 +27,5 @@ export function parseStory(value:unknown):AxralStoryV1{
  });});
  return JSON.parse(JSON.stringify(value)) as AxralStoryV1;
 }
-export function serializeStory(value:unknown):string{return JSON.stringify(parseStory(value),null,2)+'\\n'}
+export function serializeStory(value:unknown):string{return JSON.stringify(parseStory(value),null,2)+'\n'}
 export function validateStoryReferences(value:unknown,known:Set<string>):StoryReferenceFinding[]{const story=parseStory(value),out:StoryReferenceFinding[]=[];story.chapters.forEach((c,ci)=>c.scenes.forEach((s,si)=>s.blocks.forEach((b,bi)=>{const refs=[...(b.entity_refs??[])];if(b.character_id)refs.push(b.character_id);refs.forEach(ref=>{if(!known.has(ref))out.push({path:`chapters[${ci}].scenes[${si}].blocks[${bi}]`,entity_id:ref,message:`参照先の世界設定IDが見つかりません: ${ref}`})})})));return out}
