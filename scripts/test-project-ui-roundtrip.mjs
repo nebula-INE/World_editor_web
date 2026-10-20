@@ -48,9 +48,8 @@ try {
 
   // Save through the actual File > Save Axral Project UI and verify all portable fields.
   await page.locator("#file-menu-button").click();
-  await page.locator("#menu-save-project").click();
   const downloadPromise = page.waitForEvent("download");
-  // The menu click above triggers the download synchronously in the app handler.
+  await page.locator("#menu-save-project").click();
   const download = await downloadPromise;
   const savedPath = path.join(tempDir, download.suggestedFilename());
   await download.saveAs(savedPath);
