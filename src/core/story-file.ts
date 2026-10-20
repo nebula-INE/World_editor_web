@@ -10,7 +10,7 @@ export function parseStoryFileText(text: string): AxralStoryV1 {
   try {
     payload = JSON.parse(text);
   } catch (error) {
-    throw new Error(`物語ファイルのJSONを読み込めませんでした: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(\`物語ファイルのJSONを読み込めませんでした: \${error instanceof Error ? error.message : String(error)}\`);
   }
   return parseStory(payload);
 }
@@ -23,8 +23,8 @@ export function serializeStoryFile(value: unknown): string {
 /** Return a safe download name with the dedicated story extension. */
 export function storyFilename(title: string): string {
   const cleaned = title.trim()
-    .replace(/[<>:"/\\\\|?*\u0000-\u001f]/g, '_')
+    .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, '_')
     .replace(/[. ]+$/g, '')
     .slice(0, 100);
-  return `${cleaned || 'untitled'}${STORY_FILE_SUFFIX}`;
+  return \`\${cleaned || 'untitled'}\${STORY_FILE_SUFFIX}\`;
 }
