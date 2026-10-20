@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:project-contract": "node scripts/test-stable-entity-ids.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",
