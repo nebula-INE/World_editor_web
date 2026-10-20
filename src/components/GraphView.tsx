@@ -137,11 +137,29 @@ export const GraphView: React.FC<GraphViewProps> = ({
   // entity-initialization effect can capture stale positions and permanently skip
   // the first fit while marking hasFit=true.
   useEffect(() => {
-    if (hasFit || entities.length === 0 || !containerRef.current) return;
+    if (hasFit || entities.length === 0) return;
     if (!entities.every(entity => positions[entity.id])) return;
 
-    fitToView();
-    setHasFit(true);
+    const container = containerRef.current;
+    if (!container) return;
+
+    // The graph can mount while its tab/panel is still hidden. Do not lock in
+    // the initial fit until the container has real dimensions; retry on resize.
+    const tryInitialFit = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      fitToView();
+      setHasFit(true);
+      return true;
+    };
+
+    if (tryInitialFit()) return;
+
+    const observer = new ResizeObserver(() => {
+      if (tryInitialFit()) observer.disconnect();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [entities, positions, hasFit, fitToView]);
 
   // Move camera by delta (for D-Pad, Arrow keys, etc.)
