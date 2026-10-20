@@ -26,6 +26,7 @@ export function storyFilename(title: string): string {
   const cleaned = title.trim()
     .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, '_')
     .replace(/[. ]+$/g, '')
-    .slice(0, 100);
+    .slice(0, 100)
+    .replace(/[. ]+$/g, '');
   return (cleaned || 'untitled') + STORY_FILE_SUFFIX;
 }
