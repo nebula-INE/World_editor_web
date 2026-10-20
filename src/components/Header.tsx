@@ -20,6 +20,7 @@ interface HeaderProps {
   conflictCount: number;
   onInsertTemplate: (template: string) => void;
   onResetSample: () => void;
+  onOpenStoryAuthoring: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   conflictCount,
   onInsertTemplate,
   onResetSample,
+  onOpenStoryAuthoring,
 }) => {
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [patchesMenuOpen, setPatchesMenuOpen] = useState(false);
@@ -196,6 +198,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      <button id="menu-open-story-authoring" onClick={onOpenStoryAuthoring} className="px-2.5 py-1 text-xs text-indigo-200 hover:text-white hover:bg-indigo-950/70 border border-indigo-800/60 rounded">Story Authoring</button>
 
       {/* Right: Quick actions */}
       <div className="flex items-center space-x-2">
