@@ -38,6 +38,16 @@ try {
   await page.goto(`http://127.0.0.1:${port}`);
   const editor = page.locator("textarea").first();
   await editor.waitFor();
+  let invalidProjectAlertSeen = false;
+  page.on("dialog", async (dialog) => {
+    if (dialog.type() === "confirm") {
+      await dialog.accept();
+      return;
+    }
+    assert.match(dialog.message(), /プロジェクトを読み込めませんでした/);
+    invalidProjectAlertSeen = true;
+    await dialog.accept();
+  });
 
   // Load the shared Desktop/Web fixture through the actual File > Open UI.
   await page.locator("#file-menu-button").click();
@@ -69,10 +79,6 @@ try {
 
   // Invalid input must be recoverable and must not replace the open document.
   const beforeInvalidOpen = await editor.inputValue();
-  page.once("dialog", async (dialog) => {
-    assert.match(dialog.message(), /プロジェクトを読み込めませんでした/);
-    await dialog.accept();
-  });
   await page.locator('input[type="file"]').setInputFiles({
     name: "broken.axral.json",
     mimeType: "application/json",
@@ -80,6 +86,7 @@ try {
   });
   await delay(200);
   assert.equal(await editor.inputValue(), beforeInvalidOpen, "malformed project must leave current document intact");
+  assert.equal(invalidProjectAlertSeen, true, "malformed project must show a recoverable error");
 
   console.log("Project UI round-trip and malformed-file recovery passed.");
 } finally {
