@@ -61,6 +61,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     : allEntities;
 
   const visibleEntityIds = new Set(entities.map(e => e.id));
+  const entityIdsKey = JSON.stringify(entities.map(entity => entity.id));
   const relations = Object.values(model.relations).filter(
     r => visibleEntityIds.has(r.source) && visibleEntityIds.has(r.target)
   );
@@ -95,11 +96,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return changed ? next : prev;
     });
 
-    if (!hasFit && containerRef.current && entities.length > 0) {
-      setTimeout(() => fitToView(), 50);
-      setHasFit(true);
-    }
-  }, [entities.length]);
+  }, [entityIdsKey]);
 
   // Fit to View Calculation
   const fitToView = useCallback(() => {
@@ -135,6 +132,35 @@ export const GraphView: React.FC<GraphViewProps> = ({
       y: rect.height / 2 - centerY * newScale,
     });
   }, [entities, positions]);
+
+  // Fit only after the positions state has been committed. Scheduling fit from the
+  // entity-initialization effect can capture stale positions and permanently skip
+  // the first fit while marking hasFit=true.
+  useEffect(() => {
+    if (hasFit || entities.length === 0) return;
+    if (!entities.every(entity => positions[entity.id])) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    // The graph can mount while its tab/panel is still hidden. Do not lock in
+    // the initial fit until the container has real dimensions; retry on resize.
+    const tryInitialFit = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      fitToView();
+      setHasFit(true);
+      return true;
+    };
+
+    if (tryInitialFit()) return;
+
+    const observer = new ResizeObserver(() => {
+      if (tryInitialFit()) observer.disconnect();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [entities, positions, hasFit, fitToView]);
 
   // Move camera by delta (for D-Pad, Arrow keys, etc.)
   const panBy = useCallback((dx: number, dy: number) => {
