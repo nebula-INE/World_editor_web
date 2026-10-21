@@ -25,7 +25,7 @@ export const StoryAuthoring: React.FC<Props> = ({onClose}) => {
   const openFile = () => { if (confirmDiscard('別の物語を開く')) input.current?.click(); };
   const onFile = async (event:React.ChangeEvent<HTMLInputElement>) => {
     const file=event.target.files?.[0];event.target.value='';if(!file)return;
-    try { if(!isStoryFilename(file.name)) throw new Error(`物語ファイルは ${STORY_FILE_SUFFIX} で終わる必要があります。`); const parsed=parseStoryFileText(await file.text());setStory(parsed);savedSnapshot.current=serializeStoryFile(parsed);setSelectedChapter(parsed.chapters[0]?.id??null);setSelectedScene(parsed.chapters[0]?.scenes[0]?.id??null);setMessage(`読み込みました: ${file.name}`); }
+    try { if(!isStoryFilename(file.name)) throw new Error(`物語ファイルは ${STORY_FILE_SUFFIX} で終わる必要があります。`); const parsed=parseStoryFileText(await file.text());setStory(parsed);savedSnapshot.current=serializeStoryFile(parsed);const firstChapterWithScenes=parsed.chapters.find(c=>c.scenes.length>0);const selectedChapter=firstChapterWithScenes??parsed.chapters[0];setSelectedChapter(selectedChapter?.id??null);setSelectedScene(selectedChapter?.scenes[0]?.id??null);setMessage(`読み込みました: ${file.name}`); }
     catch(e) { setMessage(e instanceof Error?e.message:String(e)); }
   };
   const save = () => { try { const serialized=serializeStoryFile(story);const blob=new Blob([serialized],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=storyFilename(story.title);a.style.display='none';document.body.appendChild(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),1000);savedSnapshot.current=serialized;setMessage('物語ファイルを書き出しました。'); } catch(e) {setMessage(e instanceof Error?e.message:String(e));} };
