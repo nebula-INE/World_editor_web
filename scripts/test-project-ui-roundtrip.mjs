@@ -68,7 +68,7 @@ try {
   const saved = JSON.parse(await readFile(savedPath, "utf8"));
   assert.deepEqual(saved, fixture, "UI save must preserve the shared v1 fixture exactly");
 
-  // Reload the UI-produced file to cover the second half of the round-trip.
+  // Reload the UI-produced file and verify the full project survives a second save.
   await page.locator("#file-menu-button").click();
   await page.locator("#menu-open-file").click();
   await page.locator('input[type="file"]').setInputFiles(savedPath);
@@ -76,6 +76,15 @@ try {
     const input = document.querySelector("textarea");
     return input instanceof HTMLTextAreaElement && input.value === expected;
   }, fixture.text);
+
+  await page.locator("#file-menu-button").click();
+  const secondDownloadPromise = page.waitForEvent("download");
+  await page.locator("#menu-save-project").click();
+  const secondDownload = await secondDownloadPromise;
+  const reSavedPath = path.join(tempDir, `reloaded-${secondDownload.suggestedFilename()}`);
+  await secondDownload.saveAs(reSavedPath);
+  const reSaved = JSON.parse(await readFile(reSavedPath, "utf8"));
+  assert.deepEqual(reSaved, fixture, "reopened project must preserve all v1 fields on a second save");
 
   // Invalid input must be recoverable and must not replace the open document.
   const beforeInvalidOpen = await editor.inputValue();
