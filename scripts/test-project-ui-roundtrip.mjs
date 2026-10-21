@@ -97,6 +97,17 @@ try {
   assert.equal(await editor.inputValue(), beforeInvalidOpen, "malformed project must leave current document intact");
   assert.equal(invalidProjectAlertSeen, true, "malformed project must show a recoverable error");
 
+  // Save once more after the rejected load: the entire open project must remain intact,
+  // including non-text fields such as events, graph positions, timeline, and ignored candidates.
+  await page.locator("#file-menu-button").click();
+  const postInvalidDownloadPromise = page.waitForEvent("download");
+  await page.locator("#menu-save-project").click();
+  const postInvalidDownload = await postInvalidDownloadPromise;
+  const postInvalidPath = path.join(tempDir, `after-invalid-${postInvalidDownload.suggestedFilename()}`);
+  await postInvalidDownload.saveAs(postInvalidPath);
+  const afterInvalid = JSON.parse(await readFile(postInvalidPath, "utf8"));
+  assert.deepEqual(afterInvalid, fixture, "rejected malformed load must preserve the entire current project");
+
   console.log("Project UI round-trip and malformed-file recovery passed.");
 } finally {
   if (browser) await browser.close();
