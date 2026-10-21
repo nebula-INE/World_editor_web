@@ -11,6 +11,8 @@ try {
  assert.deepEqual(JSON.parse(serializeStory(parseStory(fixture))),fixture);
  assert.ok(fixture.chapters[0].scenes[0].blocks[2].text.includes("\n"));
  assert.throws(()=>parseStory({...fixture,schema_version:99}),/未対応/);
+ assert.throws(()=>parseStory({...fixture,schema_version:true}),/未対応/);
+ assert.throws(()=>parseStory({...fixture,schema_version:"1"}),/未対応/);
  const duplicate=structuredClone(fixture);duplicate.chapters[0].scenes[0].blocks[1].id="block_001";assert.throws(()=>parseStory(duplicate),/重複/);
  const known=new Set(["ent_8f07c23f5f99"]);
  assert.deepEqual(validateStoryReferences(fixture,known).map(x=>x.entity_id),["ent_681ee300008e"]);
