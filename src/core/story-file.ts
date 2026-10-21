@@ -28,10 +28,13 @@ export function serializeStoryFile(value: unknown): string {
 
 /** Return a safe download name with the dedicated story extension. */
 export function storyFilename(title: string): string {
-  const cleaned = title.trim()
-    .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, '_')
-    .replace(/[. ]+$/g, '')
-    Array.from(cleaned).slice(0, 100).join('')
+  const cleaned = Array.from(
+    title.trim()
+      .replace(/[<>:"\\/\\\\|?*\\u0000-\\u001f]/g, '_')
+      .replace(/[. ]+$/g, ''),
+  )
+    .slice(0, 100)
+    .join('')
     .replace(/[. ]+$/g, '');
   return (cleaned || 'untitled') + STORY_FILE_SUFFIX;
 }
