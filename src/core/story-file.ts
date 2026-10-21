@@ -3,6 +3,11 @@ import { parseStory, serializeStory, type AxralStoryV1 } from './story';
 
 export const STORY_FILE_SUFFIX = '.axral-story.json';
 
+/** Match the dedicated story extension case-insensitively, as Desktop does. */
+export function isStoryFilename(filename: string): boolean {
+  return filename.toLowerCase().endsWith(STORY_FILE_SUFFIX);
+}
+
 /** Parse user-selected story-file text; malformed or unknown versions fail closed. */
 export function parseStoryFileText(text: string): AxralStoryV1 {
   if (typeof text !== 'string') throw new Error('物語ファイルの内容は文字列である必要があります。');
