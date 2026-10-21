@@ -16,6 +16,7 @@ try {
   assert.match(text, /夜。雨/);
   assert.equal(storyFilename("第一話 / 始まり"), "第一話 _ 始まり.axral-story.json");
   assert.equal(storyFilename("..."), "untitled.axral-story.json");
+  assert.equal(storyFilename("😀".repeat(101)), "😀".repeat(100) + STORY_FILE_SUFFIX, "filename truncation must preserve complete Unicode code points");
   assert.ok(STORY_FILE_SUFFIX.endsWith(".axral-story.json"));
   assert.equal(isStoryFilename("story.axral-story.json"), true);
   assert.equal(isStoryFilename("STORY.AXRAL-STORY.JSON"), true);
