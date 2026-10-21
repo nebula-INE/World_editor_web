@@ -30,7 +30,7 @@ export function serializeStoryFile(value: unknown): string {
 export function storyFilename(title: string): string {
   const cleaned = Array.from(
     title.trim()
-    .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, '_')
+      .replace(/[<>:"\/\\|?*\u0000-\u001f]/g, '_')
       .replace(/[. ]+$/g, ''),
   )
     .slice(0, 100)
