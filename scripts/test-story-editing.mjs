@@ -30,7 +30,7 @@ try {
  const firstId = originalIds[0], secondId = originalIds[1];
  let sequential = e.updateBlock(fixture, firstId, {
    type: "dialogue",
-   text: "「こんにちは。\\nまた会えたね。」",
+   text: "「こんにちは。\nまた会えたね。」",
    character_id: "char_mio"
  });
  sequential = e.reorderBlock(sequential, firstId, sequential.chapters[0].scenes[0].blocks.length - 1);
@@ -39,7 +39,7 @@ try {
  const roundTripScene = roundTripped.chapters[0].scenes[0];
  const edited = roundTripScene.blocks.find(b => b.id === firstId);
  assert.equal(edited.type, "dialogue");
- assert.equal(edited.text, "「こんにちは。\\nまた会えたね。」");
+ assert.equal(edited.text, "「こんにちは。\nまた会えたね。」");
  assert.equal(edited.character_id, "char_mio");
  assert.ok(!roundTripScene.blocks.some(b => b.id === secondId));
  assert.deepEqual(roundTripScene.blocks.map(b => b.order), roundTripScene.blocks.map((_, i) => i));
