@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -8,10 +8,15 @@ import { chromium } from "playwright";
 
 const root = process.cwd();
 const sourceFixturePath = path.join(root, "tests/fixtures/axral-project-v1.json");
-const fixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
+const sharedFixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
+const crossLoadInputPath = process.env.AXRAL_CROSSLOAD_INPUT;
+const fixture = crossLoadInputPath
+  ? JSON.parse(await readFile(crossLoadInputPath, "utf8"))
+  : sharedFixture;
+assert.deepEqual(fixture, sharedFixture, "cross-loaded Desktop project must match the shared v1 contract fixture");
 const tempDir = await mkdtemp(path.join(tmpdir(), "axral-project-ui-"));
-const fixturePath = path.join(tempDir, "Desktop-fixture.axral.json");
-await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
+const fixturePath = crossLoadInputPath || path.join(tempDir, "Desktop-fixture.axral.json");
+if (!crossLoadInputPath) await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
 const port = 4179;
 const server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
   cwd: root,
@@ -67,8 +72,14 @@ try {
   await download.saveAs(savedPath);
   const saved = JSON.parse(await readFile(savedPath, "utf8"));
   assert.deepEqual(saved, fixture, "UI save must preserve the shared v1 fixture exactly");
+  const outputDir = process.env.AXRAL_CROSSLOAD_OUTPUT_DIR;
+  if (outputDir) {
+    const outputPath = path.join(outputDir, "web-roundtrip.axral.json");
+    await mkdir(outputDir, { recursive: true });
+    await copyFile(savedPath, outputPath);
+  }
 
-  // Reload the UI-produced file to cover the second half of the round-trip.
+  // Reload the UI-produced file and verify the full project survives a second save.
   await page.locator("#file-menu-button").click();
   await page.locator("#menu-open-file").click();
   await page.locator('input[type="file"]').setInputFiles(savedPath);
@@ -76,6 +87,15 @@ try {
     const input = document.querySelector("textarea");
     return input instanceof HTMLTextAreaElement && input.value === expected;
   }, fixture.text);
+
+  await page.locator("#file-menu-button").click();
+  const secondDownloadPromise = page.waitForEvent("download");
+  await page.locator("#menu-save-project").click();
+  const secondDownload = await secondDownloadPromise;
+  const reSavedPath = path.join(tempDir, `reloaded-${secondDownload.suggestedFilename()}`);
+  await secondDownload.saveAs(reSavedPath);
+  const reSaved = JSON.parse(await readFile(reSavedPath, "utf8"));
+  assert.deepEqual(reSaved, fixture, "reopened project must preserve all v1 fields on a second save");
 
   // Invalid input must be recoverable and must not replace the open document.
   const beforeInvalidOpen = await editor.inputValue();
@@ -87,6 +107,17 @@ try {
   await delay(200);
   assert.equal(await editor.inputValue(), beforeInvalidOpen, "malformed project must leave current document intact");
   assert.equal(invalidProjectAlertSeen, true, "malformed project must show a recoverable error");
+
+  // Save once more after the rejected load: the entire open project must remain intact,
+  // including non-text fields such as events, graph positions, timeline, and ignored candidates.
+  await page.locator("#file-menu-button").click();
+  const postInvalidDownloadPromise = page.waitForEvent("download");
+  await page.locator("#menu-save-project").click();
+  const postInvalidDownload = await postInvalidDownloadPromise;
+  const postInvalidPath = path.join(tempDir, `after-invalid-${postInvalidDownload.suggestedFilename()}`);
+  await postInvalidDownload.saveAs(postInvalidPath);
+  const afterInvalid = JSON.parse(await readFile(postInvalidPath, "utf8"));
+  assert.deepEqual(afterInvalid, fixture, "rejected malformed load must preserve the entire current project");
 
   console.log("Project UI round-trip and malformed-file recovery passed.");
 } finally {
