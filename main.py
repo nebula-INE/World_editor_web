@@ -256,6 +256,11 @@ class MainWindow(QMainWindow):
         linter_action.setText("Linter / Issues Panel")
         view_menu.addAction(linter_action)
 
+        fit_graph_action = view_menu.addAction("Fit Graph to View")
+        fit_graph_action.setShortcut("Ctrl+0")
+        fit_graph_action.setToolTip("グラフ全体が見えるように表示倍率と位置を調整します。データは変更しません。")
+        fit_graph_action.triggered.connect(self.graph_view.fit_graph_to_view)
+
     def _open_text(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open Codex Text", "", "Text (*.txt *.md)")
         if not path:
