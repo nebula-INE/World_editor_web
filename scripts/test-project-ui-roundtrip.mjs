@@ -8,10 +8,15 @@ import { chromium } from "playwright";
 
 const root = process.cwd();
 const sourceFixturePath = path.join(root, "tests/fixtures/axral-project-v1.json");
-const fixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
+const sharedFixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
+const crossLoadInputPath = process.env.AXRAL_CROSSLOAD_INPUT;
+const fixturePath = crossLoadInputPath || path.join(tmpdir(), "Desktop-fixture.axral.json");
+const fixture = crossLoadInputPath
+  ? JSON.parse(await readFile(crossLoadInputPath, "utf8"))
+  : sharedFixture;
+assert.deepEqual(fixture, sharedFixture, "cross-loaded Desktop project must match the shared v1 contract fixture");
 const tempDir = await mkdtemp(path.join(tmpdir(), "axral-project-ui-"));
-const fixturePath = path.join(tempDir, "Desktop-fixture.axral.json");
-await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
+if (!crossLoadInputPath) await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
 const port = 4179;
 const server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
   cwd: root,
@@ -67,6 +72,11 @@ try {
   await download.saveAs(savedPath);
   const saved = JSON.parse(await readFile(savedPath, "utf8"));
   assert.deepEqual(saved, fixture, "UI save must preserve the shared v1 fixture exactly");
+  const outputDir = process.env.AXRAL_CROSSLOAD_OUTPUT_DIR;
+  if (outputDir) {
+    const outputPath = path.join(outputDir, "web-roundtrip.axral.json");
+    await import("node:fs/promises").then(({ mkdir, copyFile }) => mkdir(outputDir, { recursive: true }).then(() => copyFile(savedPath, outputPath)));
+  }
 
   // Reload the UI-produced file and verify the full project survives a second save.
   await page.locator("#file-menu-button").click();
