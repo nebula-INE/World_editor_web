@@ -230,21 +230,21 @@ class MainWindow(QMainWindow):
     # ---- Menu -------------------------------------------------------
 
     def _build_menu(self) -> None:
-        file_menu = self.menuBar().addMenu("File")
+        file_menu = self.menuBar().addMenu("ファイル")
 
-        open_action = file_menu.addAction("Open Codex Text...")
+        open_action = file_menu.addAction("Codexテキストを開く...")
         open_action.triggered.connect(self._open_text)
 
-        save_action = file_menu.addAction("Save Codex Text...")
+        save_action = file_menu.addAction("Codexテキストを保存...")
         save_action.triggered.connect(self._save_text)
 
         file_menu.addSeparator()
 
-        export_action = file_menu.addAction("Export Canonical Data (JSON)...")
+        export_action = file_menu.addAction("Canonical DataをJSONに書き出す...")
         export_action.triggered.connect(self._export_json)
 
-        patches_menu = self.menuBar().addMenu("Patches")
-        resolve_action = patches_menu.addAction("Resolve Conflicts...")
+        patches_menu = self.menuBar().addMenu("変更提案")
+        resolve_action = patches_menu.addAction("矛盾を解決...")
         resolve_action.triggered.connect(self._resolve_conflicts)
 
         # Make secondary work areas discoverable and show/hide-able from the menu.
@@ -262,14 +262,14 @@ class MainWindow(QMainWindow):
         fit_graph_action.triggered.connect(self.graph_view.fit_graph_to_view)
 
     def _open_text(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open Codex Text", "", "Text (*.txt *.md)")
+        path, _ = QFileDialog.getOpenFileName(self, "Codexテキストを開く", "", "Text (*.txt *.md)")
         if not path:
             return
         with open(path, "r", encoding="utf-8") as f:
             self.editor.setPlainText(f.read())
 
     def _save_text(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Save Codex Text", "", "Text (*.txt *.md)")
+        path, _ = QFileDialog.getSaveFileName(self, "Codexテキストを保存", "", "Text (*.txt *.md)")
         if not path:
             return
         with open(path, "w", encoding="utf-8") as f:
