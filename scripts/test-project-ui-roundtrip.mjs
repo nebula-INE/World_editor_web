@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,12 +10,12 @@ const root = process.cwd();
 const sourceFixturePath = path.join(root, "tests/fixtures/axral-project-v1.json");
 const sharedFixture = JSON.parse(await readFile(sourceFixturePath, "utf8"));
 const crossLoadInputPath = process.env.AXRAL_CROSSLOAD_INPUT;
-const fixturePath = crossLoadInputPath || path.join(tmpdir(), "Desktop-fixture.axral.json");
 const fixture = crossLoadInputPath
   ? JSON.parse(await readFile(crossLoadInputPath, "utf8"))
   : sharedFixture;
 assert.deepEqual(fixture, sharedFixture, "cross-loaded Desktop project must match the shared v1 contract fixture");
 const tempDir = await mkdtemp(path.join(tmpdir(), "axral-project-ui-"));
+const fixturePath = crossLoadInputPath || path.join(tempDir, "Desktop-fixture.axral.json");
 if (!crossLoadInputPath) await writeFile(fixturePath, JSON.stringify(fixture, null, 2));
 const port = 4179;
 const server = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
@@ -75,7 +75,8 @@ try {
   const outputDir = process.env.AXRAL_CROSSLOAD_OUTPUT_DIR;
   if (outputDir) {
     const outputPath = path.join(outputDir, "web-roundtrip.axral.json");
-    await import("node:fs/promises").then(({ mkdir, copyFile }) => mkdir(outputDir, { recursive: true }).then(() => copyFile(savedPath, outputPath)));
+    await mkdir(outputDir, { recursive: true });
+    await copyFile(savedPath, outputPath);
   }
 
   // Reload the UI-produced file and verify the full project survives a second save.
