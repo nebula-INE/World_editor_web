@@ -199,7 +199,14 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <button id="menu-open-story-authoring" onClick={onOpenStoryAuthoring} className="px-2.5 py-1 text-xs text-indigo-200 hover:text-white hover:bg-indigo-950/70 border border-indigo-800/60 rounded">Story Authoring</button>
+      <button
+        id="menu-open-story-authoring"
+        onClick={onOpenStoryAuthoring}
+        className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold text-indigo-200 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/70 rounded shadow-sm transition-colors"
+      >
+        <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+        <span>台本・シナリオ執筆</span>
+      </button>
 
       {/* Right: Quick actions */}
       <div className="flex items-center space-x-2">

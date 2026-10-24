@@ -521,7 +521,19 @@ export const App: React.FC = () => {
         currentTimestamp={currentTimestamp}
       />
 
-      {storyAuthoringOpen && <StoryAuthoring onClose={() => setStoryAuthoringOpen(false)} />}
+      {storyAuthoringOpen && (
+        <StoryAuthoring
+          onClose={() => setStoryAuthoringOpen(false)}
+          worldModel={displayModel}
+          onAddEntityToWorld={(charName) => {
+            setEditorText(prev => {
+              const decl = `[${charName}:Character:Su-ken]`;
+              if (prev.includes(`[${charName}:Character`)) return prev;
+              return `${decl}\n${prev}`;
+            });
+          }}
+        />
+      )}
 
       {/* Modals */}
       <AddEventModal
