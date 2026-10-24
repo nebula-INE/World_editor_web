@@ -57,9 +57,6 @@ export const App: React.FC = () => {
   const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(LAYER_HIERARCHY));
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({});
-  const handleGraphPositionsChange = useCallback((positions: Record<string, { x: number; y: number }>) => {
-    setGraphPositions(positions);
-  }, []);
   // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
   const [documentSessionId, setDocumentSessionId] = useState(0);
 
@@ -75,6 +72,18 @@ export const App: React.FC = () => {
 
   // Parse result & Engine state
   const [parseResult, setParseResult] = useState<ParseResult>(() => parseCodexSyntax(editorText));
+  // Persist only positions belonging to the active document model. The graph canvas can briefly
+  // report positions from a timeline/previous render while a document is being replaced.
+  const graphEntityIdsRef = useRef<Set<string>>(new Set(Object.keys(parseResult.model.entities)));
+  graphEntityIdsRef.current = new Set(Object.keys(parseResult.model.entities));
+  const handleGraphPositionsChange = useCallback((positions: Record<string, { x: number; y: number }>) => {
+    const activeIds = graphEntityIdsRef.current;
+    const activePositions: Record<string, { x: number; y: number }> = {};
+    for (const [entityId, point] of Object.entries(positions)) {
+      if (activeIds.has(entityId)) activePositions[entityId] = point;
+    }
+    setGraphPositions(activePositions);
+  }, []);
   const [indexResult, setIndexResult] = useState<IndexResult>({ candidates: [], ambiguities: [] });
   const [lintIssues, setLintIssues] = useState<LintIssue[]>([]);
   const [engine, setEngine] = useState<WorldStateEngine>(() => new WorldStateEngine(parseResult.model));
