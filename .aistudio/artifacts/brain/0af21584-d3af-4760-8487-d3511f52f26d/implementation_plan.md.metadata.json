@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive implementation plan for Axral WorldCode scenario and script authoring GUI revamp, supporting Murder Mystery, Screenplays, Novels with ruby/vertical text, Audio Dramas, Quick Production Palettes (SFX/BGM, sluglines, dialogue), and Structural Templates (Kishōtenketsu, 3-Act Structure) while preserving world state consistency linting.",
-  "updatedAt":  "2026-10-24T08:58:57.747108958Z",
+  "summary":  "Comprehensive implementation plan for elevating the Layer System (所属レイヤー) alongside Worldlines (世界線・時間軸) into a first-class dual-axis worldbuilding environment, featuring custom layer management, canvas visual grouping, cross-layer relation indicators, and script authoring integration.",
+  "updatedAt":  "2026-10-24T14:32:32.355963138Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

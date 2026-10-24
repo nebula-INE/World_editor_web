@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Event } from '../core/events';
 import { LintIssue, Severity } from '../core/linter';
 import { LAYER_HIERARCHY } from '../core/models';
+import { getLayerColor } from '../core/layers';
 import { 
   Clock, 
   ShieldAlert, 
@@ -30,6 +31,9 @@ interface BottomPanelProps {
   changeSummary: string;
   visibleLayers: Set<string>;
   onToggleLayer: (layer: string) => void;
+  allLayers?: string[];
+  entityCountByLayer?: Record<string, number>;
+  onAddCustomLayer?: (layer: string) => void;
 
   // Linter props
   lintIssues: LintIssue[];
@@ -49,10 +53,13 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
   changeSummary,
   visibleLayers,
   onToggleLayer,
+  allLayers,
+  entityCountByLayer,
+  onAddCustomLayer,
   lintIssues,
   onJumpToLine,
 }) => {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'linter'>('timeline');
+  const [activeTab, setActiveTab] = useState<'layers' | 'timeline' | 'linter'>('layers');
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const warningCount = lintIssues.filter(i => i.severity === 'warning').length;
@@ -62,6 +69,20 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
       {/* Tab Bar / Header */}
       <div className="h-9 px-3 bg-[#15171C] border-b border-[#2B2E36] flex items-center justify-between text-xs select-none">
         <div className="flex items-center space-x-1">
+          {/* Layer Tab Button */}
+          <button
+            id="tab-layers"
+            onClick={() => { setActiveTab('layers'); setIsCollapsed(false); }}
+            className={`px-3 py-1.5 rounded-t font-medium flex items-center space-x-1.5 transition-colors ${
+              activeTab === 'layers' && !isCollapsed
+                ? 'bg-[#181B20] text-emerald-400 border-t-2 border-emerald-500'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#1E222A]'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-emerald-400" />
+            <span>所属レイヤー (Phase 1, §13)</span>
+          </button>
+
           {/* Timeline Tab Button */}
           <button
             id="tab-timeline"
@@ -116,6 +137,73 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
       {/* Tab Contents */}
       {!isCollapsed && (
         <div className="h-56 p-3 overflow-y-auto">
+          {activeTab === 'layers' && (
+            <div className="h-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-gray-200">
+              {(allLayers || LAYER_HIERARCHY).map(layer => {
+                const checked = visibleLayers.has(layer);
+                const color = getLayerColor(layer);
+                const count = entityCountByLayer?.[layer] ?? 0;
+
+                return (
+                  <div
+                    key={layer}
+                    className={`rounded-lg border p-3 flex flex-col justify-between transition-colors ${
+                      checked
+                        ? 'border-opacity-80 bg-opacity-20'
+                        : 'border-[#2A2E38] bg-[#14161B] opacity-60'
+                    }`}
+                    style={{
+                      borderColor: checked ? color.hex : undefined,
+                      backgroundColor: checked ? color.bgRgba : undefined
+                    }}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center space-x-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: color.hex }}
+                          />
+                          <span className="font-bold text-sm text-white">{layer}</span>
+                        </div>
+                        <span className="font-mono text-xs text-gray-400 bg-black/40 px-2 py-0.5 rounded">
+                          {count} entities
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        {checked ? 'グラフ・エディタに表示中' : '非表示フィルター適用中'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 mt-2 border-t border-[#2A2E38]">
+                      <label className="flex items-center space-x-1.5 cursor-pointer text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggleLayer(layer)}
+                          className="rounded bg-[#111317] border-gray-600 text-emerald-500 focus:ring-0"
+                        />
+                        <span>表示トグル</span>
+                      </label>
+                      <button
+                        onClick={() => {
+                          (allLayers || LAYER_HIERARCHY).forEach(l => {
+                            if (l === layer && !visibleLayers.has(l)) onToggleLayer(l);
+                            if (l !== layer && visibleLayers.has(l)) onToggleLayer(l);
+                          });
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-[#232732] hover:bg-[#2e3444] text-gray-300"
+                        title="このレイヤーのみ単独表示"
+                      >
+                        単独表示
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {activeTab === 'timeline' ? (
             <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-3 text-xs text-gray-200">
               {/* Left Column: Timeline Scrubber & Summary */}
@@ -177,7 +265,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
                   グラフに表示する世界観レイヤーをフィルタリングします:
                 </p>
                 <div className="grid grid-cols-2 gap-2 pt-1">
-                  {LAYER_HIERARCHY.map(layer => {
+                  {(allLayers || LAYER_HIERARCHY).map(layer => {
                     const checked = visibleLayers.has(layer);
                     return (
                       <label

@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Entity, Relation, WorldModel } from '../core/models';
 import { WorldState } from '../core/world_state';
+import { getLayerColor, isCrossLayerRelation } from '../core/layers';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -65,6 +66,27 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const relations = Object.values(model.relations).filter(
     r => visibleEntityIds.has(r.source) && visibleEntityIds.has(r.target)
   );
+
+  // Calculate layer grouping bounding boxes
+  const layerBounds = useMemo<Record<string, { minX: number; maxX: number; minY: number; maxY: number; count: number }>>(() => {
+    const groups: Record<string, { minX: number; maxX: number; minY: number; maxY: number; count: number }> = {};
+    for (const ent of entities) {
+      const pos = positions[ent.id];
+      if (!pos) continue;
+      const layer = ent.layer || '未分類';
+      if (!groups[layer]) {
+        groups[layer] = { minX: pos.x, maxX: pos.x, minY: pos.y, maxY: pos.y, count: 1 };
+      } else {
+        const g = groups[layer];
+        g.minX = Math.min(g.minX, pos.x);
+        g.maxX = Math.max(g.maxX, pos.x);
+        g.minY = Math.min(g.minY, pos.y);
+        g.maxY = Math.max(g.maxY, pos.y);
+        g.count++;
+      }
+    }
+    return groups;
+  }, [entities, positions]);
 
   // Initialize or update circular positions for newly added entities
   useEffect(() => {
@@ -589,6 +611,11 @@ export const GraphView: React.FC<GraphViewProps> = ({
           <span>Loc</span>
         </span>
         <span className="text-gray-600">|</span>
+        <span className="flex items-center space-x-1 text-purple-300 font-medium">
+          <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+          <span>越境関係</span>
+        </span>
+        <span className="text-gray-600">|</span>
         <span className="text-gray-300 font-mono">{entities.length} nodes, {relations.length} edges</span>
       </div>
 
@@ -676,6 +703,17 @@ export const GraphView: React.FC<GraphViewProps> = ({
             >
               <polygon points="0 0, 10 3.5, 0 7" fill="#6B7280" />
             </marker>
+            {/* Cross-layer Arrow Marker */}
+            <marker
+              id="arrowhead-cross"
+              markerWidth="11"
+              markerHeight="8"
+              refX="9.5"
+              refY="4"
+              orient="auto"
+            >
+              <polygon points="0 0, 11 4, 0 8" fill="#c084fc" />
+            </marker>
           </defs>
 
           {/* Grid Background */}
@@ -683,11 +721,65 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
           {/* Graph World Group */}
           <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
+            {/* Layer Enclosure Bounds */}
+            {Object.entries(layerBounds).map(([layerName, bounds]) => {
+              const pad = 48;
+              const x = bounds.minX - pad;
+              const y = bounds.minY - pad;
+              const width = bounds.maxX - bounds.minX + pad * 2;
+              const height = bounds.maxY - bounds.minY + pad * 2;
+              const color = getLayerColor(layerName === '未分類' ? null : layerName);
+
+              return (
+                <g key={`layer-bound-${layerName}`} className="pointer-events-none">
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    rx="16"
+                    fill={color.bgRgba}
+                    stroke={color.borderHex}
+                    strokeWidth="1.5"
+                    strokeDasharray="5 3"
+                    opacity="0.85"
+                  />
+                  <g transform={`translate(${x + 12}, ${y - 10})`}>
+                    <rect
+                      x="0"
+                      y="0"
+                      width={layerName.length * 8 + 32}
+                      height="20"
+                      rx="5"
+                      fill="#15181F"
+                      stroke={color.borderHex}
+                      strokeWidth="1.2"
+                    />
+                    <circle cx="9" cy="10" r="3.5" fill={color.hex} />
+                    <text
+                      x="18"
+                      y="14"
+                      fill="#F1F5F9"
+                      fontSize="9.5"
+                      fontWeight="700"
+                      fontFamily="sans-serif"
+                    >
+                      {layerName}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+
             {/* Edges */}
             {relations.map(rel => {
               const srcPos = positions[rel.source];
               const tgtPos = positions[rel.target];
               if (!srcPos || !tgtPos) return null;
+
+              const srcEntity = model.entities[rel.source];
+              const tgtEntity = model.entities[rel.target];
+              const isCrossLayer = isCrossLayerRelation(srcEntity?.layer, tgtEntity?.layer);
 
               const dx = tgtPos.x - srcPos.x;
               const dy = tgtPos.y - srcPos.y;
@@ -705,8 +797,16 @@ export const GraphView: React.FC<GraphViewProps> = ({
               const midX = (startX + endX) / 2;
               const midY = (startY + endY) / 2;
 
-              const strokeDasharray = getLineDash(rel.status);
-              const strokeColor = rel.status === 'rumor' ? '#9CA3AF' : '#6B7280';
+              const strokeDasharray = isCrossLayer ? '6 4' : getLineDash(rel.status);
+              const strokeColor = isCrossLayer ? '#c084fc' : rel.status === 'rumor' ? '#9CA3AF' : '#6B7280';
+              const strokeWidth = isCrossLayer ? '2.5' : '2';
+              const markerEnd = isCrossLayer ? 'url(#arrowhead-cross)' : 'url(#arrowhead)';
+
+              const badgeLabel = rel.type;
+              const badgeWidth = badgeLabel.length * 7 + 18;
+              const badgeFill = isCrossLayer ? '#221530' : '#1E222A';
+              const badgeStroke = isCrossLayer ? '#a855f7' : '#383E4D';
+              const badgeTextColor = isCrossLayer ? '#f3e8ff' : '#E2E8F0';
 
               return (
                 <g key={rel.id} className="group">
@@ -726,9 +826,9 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     x2={endX}
                     y2={endY}
                     stroke={strokeColor}
-                    strokeWidth="2"
+                    strokeWidth={strokeWidth}
                     strokeDasharray={strokeDasharray}
-                    markerEnd="url(#arrowhead)"
+                    markerEnd={markerEnd}
                   />
 
                   {/* Relation Label Badge */}
@@ -750,26 +850,26 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     }}
                   >
                     <rect
-                      x={-((rel.type.length * 7 + 16) / 2)}
+                      x={-(badgeWidth / 2)}
                       y="-11"
-                      width={rel.type.length * 7 + 16}
+                      width={badgeWidth}
                       height="22"
                       rx="11"
-                      fill="#1E222A"
-                      stroke="#383E4D"
-                      strokeWidth="1.2"
+                      fill={badgeFill}
+                      stroke={badgeStroke}
+                      strokeWidth={isCrossLayer ? "1.5" : "1.2"}
                       className="group-hover:stroke-indigo-400 group-hover:fill-[#252A36] transition-colors"
                     />
                     <text
                       x="0"
                       y="4"
                       textAnchor="middle"
-                      fill="#E2E8F0"
+                      fill={badgeTextColor}
                       fontSize="11"
-                      fontWeight="500"
+                      fontWeight={isCrossLayer ? "600" : "500"}
                       fontFamily="sans-serif"
                     >
-                      {rel.type}
+                      {badgeLabel}
                     </text>
                   </g>
                 </g>
@@ -779,7 +879,8 @@ export const GraphView: React.FC<GraphViewProps> = ({
             {/* Nodes */}
             {entities.map(entity => {
               const pos = positions[entity.id] || { x: 100, y: 100 };
-              const color = LAYER_COLORS[entity.type] || LAYER_COLORS.Unknown;
+              const typeColor = LAYER_COLORS[entity.type] || LAYER_COLORS.Unknown;
+              const layerColor = getLayerColor(entity.layer);
               const isDragging = draggingNodeId === entity.id;
 
               return (
@@ -797,18 +898,19 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     }
                   }}
                 >
-                  {/* Shadow / Glow */}
+                  {/* Shadow / Layer-themed Glow */}
                   <circle
-                    r={NODE_RADIUS + 2}
-                    fill={color}
-                    opacity={isDragging ? "0.35" : "0.15"}
+                    r={NODE_RADIUS + 4}
+                    fill={layerColor.hex}
+                    opacity={isDragging ? "0.45" : "0.22"}
                   />
                   {/* Main Circle */}
                   <circle
                     r={NODE_RADIUS}
-                    fill={color}
-                    stroke="#1E2128"
-                    strokeWidth="2"
+                    fill={typeColor}
+                    stroke={layerColor.hex}
+                    strokeWidth={entity.layer ? "2.5" : "1.5"}
+                    strokeDasharray={entity.layer ? undefined : "3 3"}
                     className="transition-transform duration-75"
                   />
                   {/* Entity Name */}
@@ -829,14 +931,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
                     x="0"
                     y="12"
                     textAnchor="middle"
-                    fill="#F1F5F9"
+                    fill={layerColor.textHex}
                     fontSize="9.5"
-                    fontWeight="500"
-                    opacity="0.9"
+                    fontWeight="600"
+                    opacity="0.95"
                     fontFamily="sans-serif"
                     style={{ pointerEvents: 'none' }}
                   >
-                    {entity.layer ? `${entity.type}:${entity.layer}` : entity.type}
+                    {entity.layer ? `${entity.type} · ${entity.layer}` : entity.type}
                   </text>
                 </g>
               );

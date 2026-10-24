@@ -9,8 +9,10 @@ import { AddEventModal } from './components/AddEventModal';
 import { RelationEditModal } from './components/RelationEditModal';
 import { ConflictModal } from './components/ConflictModal';
 import { StoryAuthoring } from './components/StoryAuthoring';
+import { DualDimensionBar } from './components/DualDimensionBar';
 
 import { WorldModel, LAYER_HIERARCHY } from './core/models';
+import { extractAllLayers } from './core/layers';
 import { Event, newEvent } from './core/events';
 import { createProject, parseProject } from './core/project';
 import { WorldState, WorldStateEngine } from './core/world_state';
@@ -55,6 +57,13 @@ export const App: React.FC = () => {
   // Timeline & Layer filters
   const [timelineMode, setTimelineMode] = useState<boolean>(false);
   const [currentTimestamp, setCurrentTimestamp] = useState<number>(0);
+  const [customLayers, setCustomLayers] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('axral_custom_layers') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set(LAYER_HIERARCHY));
   const [graphPositions, setGraphPositions] = useState<Record<string, { x: number; y: number }>>({});
   // Remount the canvas when a different document is opened so its layout/camera cannot leak across documents.
@@ -124,6 +133,37 @@ export const App: React.FC = () => {
     }
     return parseResult.model;
   }, [timelineMode, engine, currentTimestamp, parseResult.model]);
+
+  // All active layers (extracted from entities + customLayers + defaults)
+  const allLayers = useMemo(() => {
+    return extractAllLayers(displayModel.entities, customLayers);
+  }, [displayModel.entities, customLayers]);
+
+  // Keep visibleLayers in sync when new layers are introduced
+  useEffect(() => {
+    setVisibleLayers(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const layer of allLayers) {
+        if (!next.has(layer)) {
+          next.add(layer);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [allLayers]);
+
+  // Count entities in each layer
+  const entityCountByLayer = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const l of allLayers) counts[l] = 0;
+    for (const ent of Object.values(displayModel.entities)) {
+      const l = ent.layer || '未分類';
+      counts[l] = (counts[l] || 0) + 1;
+    }
+    return counts;
+  }, [displayModel.entities, allLayers]);
 
   // Compute change summary for current timestamp
   const changeSummaryText = useMemo(() => {
@@ -304,11 +344,36 @@ export const App: React.FC = () => {
     setVisibleLayers(prev => {
       const next = new Set(prev);
       if (next.has(layer)) {
-        next.delete(layer);
+        if (next.size > 1) next.delete(layer);
       } else {
         next.add(layer);
       }
       return next;
+    });
+  };
+
+  const handleSetAllLayersVisible = () => {
+    setVisibleLayers(new Set(allLayers));
+  };
+
+  const handleSelectOnlyLayer = (layer: string) => {
+    setVisibleLayers(new Set([layer]));
+  };
+
+  const handleAddCustomLayer = (newLayerName: string) => {
+    const trimmed = newLayerName.trim();
+    if (!trimmed) return;
+    if (!customLayers.includes(trimmed)) {
+      const updated = [...customLayers, trimmed];
+      setCustomLayers(updated);
+      localStorage.setItem('axral_custom_layers', JSON.stringify(updated));
+    }
+    setVisibleLayers(prev => new Set(prev).add(trimmed));
+
+    // Append a template entity declaration for the new layer
+    setEditorText(prev => {
+      if (prev.includes(`:${trimmed}]`)) return prev;
+      return `${prev.trimEnd()}\n\n# New Layer: ${trimmed}\n[新規エンティティ:Character:${trimmed}]\n`;
     });
   };
 
@@ -455,6 +520,23 @@ export const App: React.FC = () => {
         onOpenStoryAuthoring={() => setStoryAuthoringOpen(true)}
       />
 
+      {/* Dual Dimension Control Bar: 所属レイヤー (Layer) & 世界線 (Timeline) */}
+      <DualDimensionBar
+        allLayers={allLayers}
+        visibleLayers={visibleLayers}
+        onToggleLayer={handleToggleLayer}
+        onSetAllLayersVisible={handleSetAllLayersVisible}
+        onSelectOnlyLayer={handleSelectOnlyLayer}
+        entityCountByLayer={entityCountByLayer}
+        onAddCustomLayer={handleAddCustomLayer}
+        timelineMode={timelineMode}
+        onToggleTimelineMode={setTimelineMode}
+        timestamp={currentTimestamp}
+        onTimestampChange={setCurrentTimestamp}
+        events={events}
+        onOpenAddEventModal={() => setIsAddEventOpen(true)}
+      />
+
       {/* Main 3-Column Split Area */}
       <main className="flex-1 flex overflow-hidden">
         {/* Left: Codex Syntax Editor (approx 28% width) */}
@@ -491,7 +573,7 @@ export const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Bottom Panel: Timeline Lens & Linter */}
+      {/* Bottom Panel: Layers, Timeline Lens & Linter */}
       <BottomPanel
         timelineMode={timelineMode}
         onToggleTimelineMode={setTimelineMode}
@@ -505,6 +587,9 @@ export const App: React.FC = () => {
         changeSummary={changeSummaryText}
         visibleLayers={visibleLayers}
         onToggleLayer={handleToggleLayer}
+        allLayers={allLayers}
+        entityCountByLayer={entityCountByLayer}
+        onAddCustomLayer={handleAddCustomLayer}
         lintIssues={lintIssues}
         onJumpToLine={(line) => setHighlightedLine(line)}
       />

@@ -26,6 +26,7 @@ import {
   Layers,
   ArrowRight
 } from 'lucide-react';
+import { getLayerColor } from '../core/layers';
 import {
   parseStory,
   WORK_KINDS,
@@ -148,18 +149,39 @@ export const StoryAuthoring: React.FC<StoryAuthoringProps> = ({
   // Story Metrics
   const stats = useMemo(() => calculateStoryStats(story), [story]);
 
-  // World Characters list
-  const knownCharacters = useMemo(() => {
-    const list: string[] = [];
+  const [authoringLayerFilter, setAuthoringLayerFilter] = useState<string>('all');
+
+  // World Characters list with layer information
+  const charactersWithLayer = useMemo(() => {
+    const list: { name: string; layer: string; id: string }[] = [];
     if (worldModel?.entities) {
       for (const ent of Object.values(worldModel.entities)) {
         if (ent.type === 'Character' || ent.name) {
-          list.push(ent.name);
+          list.push({
+            name: ent.name,
+            layer: ent.layer || '未分類',
+            id: ent.id
+          });
         }
       }
     }
-    return Array.from(new Set(list));
+    return list;
   }, [worldModel]);
+
+  const authoringLayers = useMemo(() => {
+    const s = new Set<string>();
+    charactersWithLayer.forEach(c => s.add(c.layer));
+    return Array.from(s);
+  }, [charactersWithLayer]);
+
+  const filteredCharacters = useMemo(() => {
+    if (authoringLayerFilter === 'all') return charactersWithLayer;
+    return charactersWithLayer.filter(c => c.layer === authoringLayerFilter);
+  }, [charactersWithLayer, authoringLayerFilter]);
+
+  const knownCharacters = useMemo(() => {
+    return Array.from(new Set(charactersWithLayer.map(c => c.name)));
+  }, [charactersWithLayer]);
 
   // Lore Consistency findings
   const consistencyReport = useMemo(() => {
@@ -603,22 +625,63 @@ export const StoryAuthoring: React.FC<StoryAuthoringProps> = ({
                     />
                   </div>
 
-                  {/* Character Speaker Quick Palette */}
-                  {knownCharacters.length > 0 && (
-                    <div className="flex items-center space-x-1.5 text-xs text-gray-400">
-                      <User className="h-3.5 w-3.5 text-indigo-400" />
-                      <span className="hidden sm:inline">世界設定キャラ:</span>
-                      <div className="flex items-center space-x-1 overflow-x-auto max-w-[280px]">
-                        {knownCharacters.map(charName => (
+                  {/* Character Speaker Quick Palette with Layer Filtering */}
+                  {charactersWithLayer.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-400">
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <User className="h-3.5 w-3.5 text-indigo-400" />
+                        <span className="hidden sm:inline font-medium text-gray-300">話者サジェスト:</span>
+                      </div>
+
+                      {/* Layer Filter Tabs for Speakers */}
+                      {authoringLayers.length > 1 && (
+                        <div className="flex items-center space-x-1 bg-[#181a22] border border-[#2d323f] rounded p-0.5 shrink-0">
                           <button
-                            key={charName}
-                            onClick={() => handleInsertQuickBlock('dialogue', '「」', charName)}
-                            className="rounded bg-[#252934] border border-[#3a3f4e] px-2 py-0.5 text-[11px] text-indigo-200 hover:bg-indigo-950/70 hover:border-indigo-600 transition-colors shrink-0"
-                            title={`${charName}のセリフブロックを追加`}
+                            onClick={() => setAuthoringLayerFilter('all')}
+                            className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              authoringLayerFilter === 'all'
+                                ? 'bg-indigo-600 text-white font-bold'
+                                : 'text-gray-400 hover:text-gray-200'
+                            }`}
                           >
-                            ＋ {charName}
+                            全層
                           </button>
-                        ))}
+                          {authoringLayers.map(l => {
+                            const lCol = getLayerColor(l === '未分類' ? null : l);
+                            return (
+                              <button
+                                key={l}
+                                onClick={() => setAuthoringLayerFilter(l)}
+                                className={`flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] ${
+                                  authoringLayerFilter === l
+                                    ? 'bg-[#252a38] text-white font-bold'
+                                    : 'text-gray-400 hover:text-gray-200'
+                                }`}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: lCol.hex }} />
+                                <span>{l}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Filtered Character Buttons */}
+                      <div className="flex items-center space-x-1 overflow-x-auto max-w-[340px]">
+                        {filteredCharacters.map(charObj => {
+                          const lCol = getLayerColor(charObj.layer === '未分類' ? null : charObj.layer);
+                          return (
+                            <button
+                              key={charObj.id}
+                              onClick={() => handleInsertQuickBlock('dialogue', '「」', charObj.name)}
+                              className="flex items-center space-x-1 rounded bg-[#20232d] border border-[#343846] px-2 py-0.5 text-[11px] text-gray-200 hover:bg-indigo-950/70 hover:border-indigo-600 transition-colors shrink-0"
+                              title={`${charObj.name}（所属: ${charObj.layer}）のセリフブロックを追加`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: lCol.hex }} />
+                              <span>＋ {charObj.name}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

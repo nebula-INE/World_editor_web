@@ -8,7 +8,7 @@ export const SCHEMA_VERSION = 1;
 export const LAYER_HIERARCHY: string[] = ["Su-ken", "Kan-ken", "An-ken", "Ki-ken"];
 
 export function isValidLayer(layer: string | null | undefined): boolean {
-  return layer === null || layer === undefined || LAYER_HIERARCHY.includes(layer);
+  return layer === null || layer === undefined || (typeof layer === 'string' && layer.trim().length > 0);
 }
 
 export function newId(prefix: string): string {
