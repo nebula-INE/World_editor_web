@@ -21,6 +21,7 @@ interface HeaderProps {
   onInsertTemplate: (template: string) => void;
   onResetSample: () => void;
   onOpenStoryAuthoring: () => void;
+  onOpenRelationshipGraph?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   onInsertTemplate,
   onResetSample,
   onOpenStoryAuthoring,
+  onOpenRelationshipGraph
 }) => {
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [patchesMenuOpen, setPatchesMenuOpen] = useState(false);
@@ -199,14 +201,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <button
-        id="menu-open-story-authoring"
-        onClick={onOpenStoryAuthoring}
-        className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold text-indigo-200 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/70 rounded shadow-sm transition-colors"
-      >
-        <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-        <span>台本・シナリオ執筆</span>
-      </button>
+      <div className="flex items-center space-x-2">
+        {onOpenRelationshipGraph && (
+          <button
+            id="menu-open-relationship-graph"
+            onClick={onOpenRelationshipGraph}
+            className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold text-cyan-200 hover:text-white bg-cyan-950/70 hover:bg-cyan-900 border border-cyan-700/70 rounded shadow-sm transition-colors"
+            title="時間軸と連動する人物・勢力ダイナミック相関図を表示"
+          >
+            <span>相関図 (Network Web)</span>
+          </button>
+        )}
+
+        <button
+          id="menu-open-story-authoring"
+          onClick={onOpenStoryAuthoring}
+          className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold text-indigo-200 hover:text-white bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/70 rounded shadow-sm transition-colors"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+          <span>台本・シナリオ執筆</span>
+        </button>
+      </div>
 
       {/* Right: Quick actions */}
       <div className="flex items-center space-x-2">

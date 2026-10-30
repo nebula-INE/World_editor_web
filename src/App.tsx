@@ -10,6 +10,8 @@ import { RelationEditModal } from './components/RelationEditModal';
 import { ConflictModal } from './components/ConflictModal';
 import { StoryAuthoring } from './components/StoryAuthoring';
 import { DualDimensionBar } from './components/DualDimensionBar';
+import { RelationshipGraphModal } from './components/RelationshipGraphModal';
+import { TimelineDiffNotice } from './components/TimelineDiffNotice';
 
 import { WorldModel, LAYER_HIERARCHY } from './core/models';
 import { extractAllLayers } from './core/layers';
@@ -70,6 +72,7 @@ export const App: React.FC = () => {
   const [documentSessionId, setDocumentSessionId] = useState(0);
 
   const [storyAuthoringOpen, setStoryAuthoringOpen] = useState(false);
+  const [isMainRelationshipGraphOpen, setIsMainRelationshipGraphOpen] = useState(false);
 
   // Modals state
   const [isAddEventOpen, setIsAddEventOpen] = useState(false);
@@ -285,6 +288,44 @@ export const App: React.FC = () => {
       }
 
       return text;
+    });
+  };
+
+  // Canvas & Story Entity Operations
+  const handleAddEntity = (name: string, type: string, layer?: string) => {
+    setEditorText(prev => {
+      const decl = layer ? `[${name}:${type}:${layer}]` : `[${name}:${type}]`;
+      if (prev.includes(`[${name}:`)) return prev;
+
+      const explicitHeader = '# Explicit Entity Declarations';
+      if (prev.includes(explicitHeader)) {
+        return prev.replace(explicitHeader, `${explicitHeader}\n${decl}`);
+      }
+      return `${decl}\n${prev}`;
+    });
+  };
+
+  const handleUpdateEntityLayer = (entityName: string, newLayer: string) => {
+    setEditorText(prev => {
+      const regex = new RegExp(`\\[\\s*${escapeRegex(entityName)}\\s*:\\s*([A-Za-z0-9_-]+)(?:\\s*:\\s*[^\\]]+)?\\s*\\]`, 'g');
+      if (regex.test(prev)) {
+        return prev.replace(regex, `[${entityName}:$1:${newLayer}]`);
+      }
+      return `[${entityName}:Character:${newLayer}]\n${prev}`;
+    });
+  };
+
+  const handleDeleteEntity = (entityName: string) => {
+    if (!window.confirm(`「${entityName}」を世界設定から削除しますか？関連する宣言や関係も削除されます。`)) return;
+    setEditorText(prev => {
+      const lines = prev.split('\n');
+      const filtered = lines.filter(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith(`[${entityName}:`) || trimmed === `[${entityName}]`) return false;
+        if (trimmed.startsWith(`${entityName} `) || trimmed.startsWith(`[${entityName}]`) || trimmed.includes(`-> ${entityName}`) || trimmed.includes(`-> [${entityName}]`)) return false;
+        return true;
+      });
+      return filtered.join('\n');
     });
   };
 
@@ -518,6 +559,7 @@ export const App: React.FC = () => {
         onInsertTemplate={handleInsertTemplate}
         onResetSample={handleResetSample}
         onOpenStoryAuthoring={() => setStoryAuthoringOpen(true)}
+        onOpenRelationshipGraph={() => setIsMainRelationshipGraphOpen(true)}
       />
 
       {/* Dual Dimension Control Bar: 所属レイヤー (Layer) & 世界線 (Timeline) */}
@@ -555,11 +597,15 @@ export const App: React.FC = () => {
             key={documentSessionId}
             model={displayModel}
             visibleLayers={visibleLayers}
+            allLayers={allLayers}
             initialPositions={graphPositions}
             onPositionsChange={handleGraphPositionsChange}
             onRelationTypeEdit={(refKey, oldType) => {
               setRelationEditTarget({ refKey, oldType });
             }}
+            onAddEntity={handleAddEntity}
+            onUpdateEntityLayer={handleUpdateEntityLayer}
+            onDeleteEntity={handleDeleteEntity}
           />
         </div>
 
@@ -610,12 +656,11 @@ export const App: React.FC = () => {
         <StoryAuthoring
           onClose={() => setStoryAuthoringOpen(false)}
           worldModel={displayModel}
-          onAddEntityToWorld={(charName) => {
-            setEditorText(prev => {
-              const decl = `[${charName}:Character:Su-ken]`;
-              if (prev.includes(`[${charName}:Character`)) return prev;
-              return `${decl}\n${prev}`;
-            });
+          engine={engine}
+          events={events}
+          allLayers={allLayers}
+          onAddEntityToWorld={(charName, layer) => {
+            handleAddEntity(charName, 'Character', layer || 'Su-ken');
           }}
         />
       )}
@@ -647,6 +692,25 @@ export const App: React.FC = () => {
         conflicts={parseResult.patch_conflicts}
         onResolve={handleConflictResolve}
       />
+
+      {/* Floating Timeline World-State Diff Notice */}
+      <TimelineDiffNotice
+        currentTimestamp={currentTimestamp}
+        engine={engine}
+        events={events}
+      />
+
+      {/* Main Dynamic Relationship Web Modal */}
+      {isMainRelationshipGraphOpen && (
+        <RelationshipGraphModal
+          isOpen={isMainRelationshipGraphOpen}
+          onClose={() => setIsMainRelationshipGraphOpen(false)}
+          worldModel={displayModel}
+          engine={engine}
+          currentTimestamp={currentTimestamp}
+          onOpenWiki={() => setStoryAuthoringOpen(true)}
+        />
+      )}
     </div>
   );
 };

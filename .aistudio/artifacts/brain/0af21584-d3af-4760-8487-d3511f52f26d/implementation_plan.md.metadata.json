@@ -1,6 +1,6 @@
 {
-  "summary":  "Comprehensive implementation plan for elevating the Layer System (所属レイヤー) alongside Worldlines (世界線・時間軸) into a first-class dual-axis worldbuilding environment, featuring custom layer management, canvas visual grouping, cross-layer relation indicators, and script authoring integration.",
-  "updatedAt":  "2026-10-24T14:32:32.355963138Z",
+  "summary":  "競合ツール（Scrivener、World Anvil、Obsidian等）を凌駕する新機能の実装が完了しました。\n1. 動的人物・勢力相関図（Network Web）：時間軸連動、所属・友好・敵対等の色分け、組織クラスタ、詳細パネル\n2. Scrivener風コルクボード（Corkboard View）：カード型シーン一覧、あらすじ直接編集、POV色分け、ドラッグ＆ドロップ並び替え\n3. 本文エンティティホバーインスペクター（Entity Hover Inspector）：登場人物にホバーで現在時間$t$でのステータスと関係性を即時プレビュー\n4. 伏線・フラグ管理システム（Foreshadowing Tracker）：仕込みシーンと回収シーンの時系列順序チェック、未回収警告、回収率算出\n5. 視点（POV）追跡＆執筆統計：シーンごとのPOV設定、シーン一覧でのカラーバー表示、ダッシュボードでのPOV別シーン占有率\n6. タイムライン情勢差分ハイライト（Timeline Diff Notice）：時間軸操作時に世界線内で発生した情勢変動（移動・死亡・関係変化）をトースト通知",
+  "updatedAt":  "2026-10-26T15:05:29.184157568Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -2,20 +2,26 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Entity, Relation, WorldModel } from '../core/models';
 import { WorldState } from '../core/world_state';
 import { getLayerColor, isCrossLayerRelation } from '../core/layers';
+import { computeLayerSwimlaneLayout } from '../core/layout-engine';
 import { 
   ZoomIn, 
   ZoomOut, 
   Maximize2, 
   RefreshCw, 
   Move, 
-  Layers, 
   Compass,
   ArrowUp,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   Crosshair,
-  Hand
+  Search,
+  X,
+  Plus,
+  LayoutGrid,
+  Trash2,
+  Edit3,
+  Layers
 } from 'lucide-react';
 
 const NODE_RADIUS = 34;
@@ -33,6 +39,10 @@ interface GraphViewProps {
   onRelationTypeEdit: (refKey: string, oldType: string) => void;
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
+  onAddEntity?: (name: string, type: string, layer?: string) => void;
+  onUpdateEntityLayer?: (entityName: string, newLayer: string) => void;
+  onDeleteEntity?: (entityName: string) => void;
+  allLayers?: string[];
 }
 
 export const GraphView: React.FC<GraphViewProps> = ({
@@ -41,8 +51,14 @@ export const GraphView: React.FC<GraphViewProps> = ({
   onRelationTypeEdit,
   initialPositions,
   onPositionsChange,
+  onAddEntity,
+  onUpdateEntityLayer,
+  onDeleteEntity,
+  allLayers = [],
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>(() => initialPositions || {});
   const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -50,6 +66,40 @@ export const GraphView: React.FC<GraphViewProps> = ({
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [hasFit, setHasFit] = useState(false);
   const [dragMoved, setDragMoved] = useState(false);
+
+  // Search & Focus state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // Multi-selection state
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const [selectionBox, setSelectionBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    entity: Entity | null;
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    entity: null,
+  });
+
+  // Add Node Modal state
+  const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
+  const [addNodeData, setAddNodeData] = useState({
+    name: '',
+    type: 'Character',
+    layer: allLayers[0] || 'Su-ken',
+  });
 
   useEffect(() => {
     onPositionsChange?.(positions);
@@ -87,6 +137,33 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }
     return groups;
   }, [entities, positions]);
+
+  // Search matches
+  const matchedEntities = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return entities.filter(e => 
+      e.name.toLowerCase().includes(q) ||
+      e.type.toLowerCase().includes(q) ||
+      (e.layer && e.layer.toLowerCase().includes(q))
+    );
+  }, [entities, searchQuery]);
+
+  const matchedEntityIds = useMemo(() => new Set(matchedEntities.map(e => e.id)), [matchedEntities]);
+
+  // Focus on specific entity
+  const focusOnEntity = useCallback((entityId: string) => {
+    const pos = positions[entityId];
+    if (!pos || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const targetScale = Math.max(transform.scale, 1.25);
+    setTransform({
+      scale: targetScale,
+      x: rect.width / 2 - pos.x * targetScale,
+      y: rect.height / 2 - pos.y * targetScale,
+    });
+    setSelectedNodeIds(new Set([entityId]));
+  }, [positions, transform.scale]);
 
   // Initialize or update circular positions for newly added entities
   useEffect(() => {
@@ -132,59 +209,52 @@ export const GraphView: React.FC<GraphViewProps> = ({
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of posList) {
-      minX = Math.min(minX, p.x - NODE_RADIUS - 30);
-      maxX = Math.max(maxX, p.x + NODE_RADIUS + 30);
-      minY = Math.min(minY, p.y - NODE_RADIUS - 30);
-      maxY = Math.max(maxY, p.y + NODE_RADIUS + 30);
+      minX = Math.min(minX, p.x - NODE_RADIUS - 40);
+      maxX = Math.max(maxX, p.x + NODE_RADIUS + 40);
+      minY = Math.min(minY, p.y - NODE_RADIUS - 40);
+      maxY = Math.max(maxY, p.y + NODE_RADIUS + 40);
     }
 
-    const graphWidth = maxX - minX || 200;
-    const graphHeight = maxY - minY || 200;
+    const contentW = Math.max(maxX - minX, 100);
+    const contentH = Math.max(maxY - minY, 100);
 
-    const scaleX = (rect.width - 60) / graphWidth;
-    const scaleY = (rect.height - 60) / graphHeight;
-    const newScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.6);
+    const pad = 60;
+    const availW = Math.max(rect.width - pad * 2, 100);
+    const availH = Math.max(rect.height - pad * 2, 100);
 
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
+    const scale = Math.min(Math.min(availW / contentW, availH / contentH), 1.5);
+    const targetScale = Math.max(scale, 0.2);
+
+    const midX = (minX + maxX) / 2;
+    const midY = (minY + maxY) / 2;
 
     setTransform({
-      scale: newScale,
-      x: rect.width / 2 - centerX * newScale,
-      y: rect.height / 2 - centerY * newScale,
+      scale: targetScale,
+      x: rect.width / 2 - midX * targetScale,
+      y: rect.height / 2 - midY * targetScale,
     });
   }, [entities, positions]);
 
-  // Fit only after the positions state has been committed. Scheduling fit from the
-  // entity-initialization effect can capture stale positions and permanently skip
-  // the first fit while marking hasFit=true.
+  // Auto-fit on initial render
   useEffect(() => {
-    if (hasFit || entities.length === 0) return;
-    if (!entities.every(entity => positions[entity.id])) return;
-
-    const container = containerRef.current;
-    if (!container) return;
-
-    // The graph can mount while its tab/panel is still hidden. Do not lock in
-    // the initial fit until the container has real dimensions; retry on resize.
-    const tryInitialFit = () => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return false;
+    if (!hasFit && entities.length > 0 && Object.keys(positions).length >= entities.length) {
       fitToView();
       setHasFit(true);
-      return true;
-    };
+    }
+  }, [entities.length, positions, hasFit, fitToView]);
 
-    if (tryInitialFit()) return;
-
-    const observer = new ResizeObserver(() => {
-      if (tryInitialFit()) observer.disconnect();
+  // Apply Layer Swimlane Auto Alignment
+  const handleAutoAlignByLayer = useCallback(() => {
+    const layerNames = allLayers.length > 0 ? allLayers : Array.from(new Set(entities.map(e => e.layer).filter(Boolean) as string[]));
+    const newPositions = computeLayerSwimlaneLayout(entities, layerNames, {
+      nodeRadius: NODE_RADIUS,
+      laneOrientation: 'horizontal',
     });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [entities, positions, hasFit, fitToView]);
+    setPositions(prev => ({ ...prev, ...newPositions }));
+    setTimeout(() => fitToView(), 40);
+  }, [entities, allLayers, fitToView]);
 
-  // Move camera by delta (for D-Pad, Arrow keys, etc.)
+  // Panning helper
   const panBy = useCallback((dx: number, dy: number) => {
     setTransform(prev => ({
       ...prev,
@@ -193,7 +263,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
     }));
   }, []);
 
-  // Center camera at origin (0, 0)
+  // Center Camera
   const centerCamera = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -227,7 +297,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           };
         });
       } else {
-        // Trackpad 2-finger scroll or standard wheel scroll (Finger scrolling)
+        // Trackpad 2-finger scroll or standard wheel scroll
         setTransform(prev => ({
           ...prev,
           x: prev.x - e.deltaX,
@@ -242,181 +312,54 @@ export const GraphView: React.FC<GraphViewProps> = ({
     };
   }, []);
 
-  // Touch gesture handler (1-finger pan/node drag, 2-finger pinch-zoom & pan)
-  const touchStateRef = useRef<{
-    type: 'none' | 'pan' | 'node' | 'pinch';
-    nodeId?: string;
-    startX: number;
-    startY: number;
-    camStartX: number;
-    camStartY: number;
-    initialDist?: number;
-    initialScale?: number;
-    initialMidX?: number;
-    initialMidY?: number;
-  }>({
-    type: 'none',
-    startX: 0,
-    startY: 0,
-    camStartX: 0,
-    camStartY: 0,
-  });
-
+  // Global key listener for Ctrl+F search & Arrow pan
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if typing in an input
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
 
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const target = e.target as HTMLElement | SVGElement;
-        const nodeElem = target.closest('[data-node="true"]');
-        const badgeElem = target.closest('[data-badge="true"]');
-
-        if (nodeElem) {
-          const key = nodeElem.getAttribute('data-node-id');
-          if (key) {
-            e.preventDefault();
-            touchStateRef.current = {
-              type: 'node',
-              nodeId: key,
-              startX: touch.clientX,
-              startY: touch.clientY,
-              camStartX: transform.x,
-              camStartY: transform.y,
-            };
-            setDraggingNodeId(key);
-            return;
-          }
-        }
-
-        if (!badgeElem) {
-          e.preventDefault();
-          touchStateRef.current = {
-            type: 'pan',
-            startX: touch.clientX,
-            startY: touch.clientY,
-            camStartX: transform.x,
-            camStartY: transform.y,
-          };
-          setIsPanning(true);
-        }
-      } else if (e.touches.length >= 2) {
-        // Pinch-to-zoom with 2 fingers
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        const t0 = e.touches[0];
-        const t1 = e.touches[1];
-        const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-        const midX = (t0.clientX + t1.clientX) / 2;
-        const midY = (t0.clientY + t1.clientY) / 2;
+        setIsSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+        return;
+      }
 
-        touchStateRef.current = {
-          type: 'pinch',
-          initialDist: dist,
-          initialScale: transform.scale,
-          initialMidX: midX,
-          initialMidY: midY,
-          camStartX: transform.x,
-          camStartY: transform.y,
-          startX: midX,
-          startY: midY,
-        };
-        setIsPanning(true);
+      const step = e.shiftKey ? 80 : 35;
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        panBy(0, step);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        panBy(0, -step);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        panBy(step, 0);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        panBy(-step, 0);
+      } else if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        fitToView();
+      } else if (e.key === 'Escape') {
+        setContextMenu({ visible: false, x: 0, y: 0, entity: null });
+        setSelectedNodeIds(new Set());
+        setIsSearchOpen(false);
       }
     };
 
-    const handleTouchMove = (e: TouchEvent) => {
-      if (touchStateRef.current.type === 'pan' && e.touches.length === 1) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const dx = touch.clientX - touchStateRef.current.startX;
-        const dy = touch.clientY - touchStateRef.current.startY;
-        setTransform(prev => ({
-          ...prev,
-          x: touchStateRef.current.camStartX + dx,
-          y: touchStateRef.current.camStartY + dy,
-        }));
-      } else if (touchStateRef.current.type === 'node' && e.touches.length === 1) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const nodeId = touchStateRef.current.nodeId;
-        if (nodeId) {
-          const dx = (touch.clientX - touchStateRef.current.startX) / transform.scale;
-          const dy = (touch.clientY - touchStateRef.current.startY) / transform.scale;
-          touchStateRef.current.startX = touch.clientX;
-          touchStateRef.current.startY = touch.clientY;
-          setPositions(prev => ({
-            ...prev,
-            [nodeId]: {
-              x: (prev[nodeId]?.x || 0) + dx,
-              y: (prev[nodeId]?.y || 0) + dy,
-            },
-          }));
-        }
-      } else if (e.touches.length >= 2 && touchStateRef.current.type === 'pinch') {
-        e.preventDefault();
-        const t0 = e.touches[0];
-        const t1 = e.touches[1];
-        const currentDist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-        const currentMidX = (t0.clientX + t1.clientX) / 2;
-        const currentMidY = (t0.clientY + t1.clientY) / 2;
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [panBy, fitToView]);
 
-        if (touchStateRef.current.initialDist && touchStateRef.current.initialScale) {
-          const scaleFactor = currentDist / touchStateRef.current.initialDist;
-          const newScale = Math.min(
-            Math.max(touchStateRef.current.initialScale * scaleFactor, 0.15),
-            3.5
-          );
-
-          const rect = container.getBoundingClientRect();
-          const mouseX = touchStateRef.current.initialMidX! - rect.left;
-          const mouseY = touchStateRef.current.initialMidY! - rect.top;
-
-          const panDx = currentMidX - touchStateRef.current.initialMidX!;
-          const panDy = currentMidY - touchStateRef.current.initialMidY!;
-
-          setTransform({
-            scale: newScale,
-            x: mouseX - (mouseX - touchStateRef.current.camStartX) * (newScale / touchStateRef.current.initialScale) + panDx,
-            y: mouseY - (mouseY - touchStateRef.current.camStartY) * (newScale / touchStateRef.current.initialScale) + panDy,
-          });
-        }
-      }
-    };
-
-    const handleTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0) {
-        touchStateRef.current.type = 'none';
-        setIsPanning(false);
-        setDraggingNodeId(null);
-      } else if (e.touches.length === 1 && touchStateRef.current.type === 'pinch') {
-        // Switch to single-finger pan
-        const touch = e.touches[0];
-        touchStateRef.current = {
-          type: 'pan',
-          startX: touch.clientX,
-          startY: touch.clientY,
-          camStartX: transform.x,
-          camStartY: transform.y,
-        };
-      }
-    };
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd, { passive: false });
-    container.addEventListener('touchcancel', handleTouchEnd, { passive: false });
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-      container.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [transform.scale, transform.x, transform.y]);
-
-  // Mouse Down - starts panning or node drag
+  // Mouse Down - starts panning, node drag, or rubberband selection
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Close context menu on any mouse down
+    if (contextMenu.visible) {
+      setContextMenu({ visible: false, x: 0, y: 0, entity: null });
+    }
+
     // Middle click (button 1) or right click (button 2) always pans
     if (e.button === 1 || e.button === 2) {
       e.preventDefault();
@@ -426,23 +369,41 @@ export const GraphView: React.FC<GraphViewProps> = ({
       return;
     }
 
-    // Left click on background or SVG canvas
+    // Left click on background
     if (e.button === 0) {
       const target = e.target as HTMLElement | SVGElement;
       const isNode = target.closest('[data-node="true"]');
       const isBadge = target.closest('[data-badge="true"]');
 
       if (!isNode && !isBadge) {
-        setIsPanning(true);
-        setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
-        setDragMoved(false);
+        if (e.shiftKey) {
+          // Shift + Click on background starts rubberband box selection
+          setSelectionBox({
+            startX: e.clientX,
+            startY: e.clientY,
+            currentX: e.clientX,
+            currentY: e.clientY,
+          });
+          setDragMoved(false);
+        } else {
+          // Standard pan
+          setIsPanning(true);
+          setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+          setDragMoved(false);
+          setSelectedNodeIds(new Set());
+        }
       }
     }
   };
 
-  // Global window listeners for smooth dragging even outside the container
+  // Global window listeners for smooth dragging and box selection
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (selectionBox) {
+        setSelectionBox(prev => prev ? ({ ...prev, currentX: e.clientX, currentY: e.clientY }) : null);
+        return;
+      }
+
       if (isPanning) {
         setDragMoved(true);
         setTransform(prev => ({
@@ -454,22 +415,61 @@ export const GraphView: React.FC<GraphViewProps> = ({
         setDragMoved(true);
         const dx = e.movementX / transform.scale;
         const dy = e.movementY / transform.scale;
-        setPositions(prev => ({
-          ...prev,
-          [draggingNodeId]: {
-            x: prev[draggingNodeId].x + dx,
-            y: prev[draggingNodeId].y + dy,
-          },
-        }));
+
+        setPositions(prev => {
+          const next = { ...prev };
+          // If the dragged node is part of a multi-selection, move ALL selected nodes together!
+          if (selectedNodeIds.has(draggingNodeId) && selectedNodeIds.size > 1) {
+            selectedNodeIds.forEach(id => {
+              if (next[id]) {
+                next[id] = {
+                  x: next[id].x + dx,
+                  y: next[id].y + dy,
+                };
+              }
+            });
+          } else {
+            next[draggingNodeId] = {
+              x: next[draggingNodeId].x + dx,
+              y: next[draggingNodeId].y + dy,
+            };
+          }
+          return next;
+        });
       }
     };
 
-    const handleGlobalMouseUp = () => {
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (selectionBox && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const boxLeft = Math.min(selectionBox.startX, selectionBox.currentX) - rect.left;
+        const boxRight = Math.max(selectionBox.startX, selectionBox.currentX) - rect.left;
+        const boxTop = Math.min(selectionBox.startY, selectionBox.currentY) - rect.top;
+        const boxBottom = Math.max(selectionBox.startY, selectionBox.currentY) - rect.top;
+
+        // Convert box coordinates to SVG world space
+        const worldLeft = (boxLeft - transform.x) / transform.scale;
+        const worldRight = (boxRight - transform.x) / transform.scale;
+        const worldTop = (boxTop - transform.y) / transform.scale;
+        const worldBottom = (boxBottom - transform.y) / transform.scale;
+
+        const newSelected = new Set<string>();
+        entities.forEach(ent => {
+          const pos = positions[ent.id];
+          if (pos && pos.x >= worldLeft && pos.x <= worldRight && pos.y >= worldTop && pos.y <= worldBottom) {
+            newSelected.add(ent.id);
+          }
+        });
+
+        setSelectedNodeIds(newSelected);
+        setSelectionBox(null);
+      }
+
       setIsPanning(false);
       setDraggingNodeId(null);
     };
 
-    if (isPanning || draggingNodeId) {
+    if (isPanning || draggingNodeId || selectionBox) {
       window.addEventListener('mousemove', handleGlobalMouseMove);
       window.addEventListener('mouseup', handleGlobalMouseUp);
     }
@@ -478,35 +478,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [isPanning, panStart, draggingNodeId, positions, transform.scale]);
-
-  // Keyboard navigation for Camera (Arrow keys / WASD)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Avoid intercepting when user is typing in textarea / input
-      const activeTag = document.activeElement?.tagName.toLowerCase();
-      if (activeTag === 'textarea' || activeTag === 'input') {
-        return;
-      }
-
-      const step = e.shiftKey ? 120 : 40;
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-        panBy(0, step);
-      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-        panBy(0, -step);
-      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        panBy(step, 0);
-      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        panBy(-step, 0);
-      } else if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        fitToView();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [panBy, fitToView]);
+  }, [isPanning, draggingNodeId, positions, panStart, transform, selectionBox, selectedNodeIds, entities]);
 
   const getLineDash = (status: string) => {
     if (status === 'hypothetical') return '6 4';
@@ -523,9 +495,15 @@ export const GraphView: React.FC<GraphViewProps> = ({
       className="h-full w-full bg-[#111317] relative overflow-hidden select-none flex flex-col focus:outline-none"
       onMouseDown={handleMouseDown}
       onContextMenu={(e) => {
-        // Suppress right-click menu if user was panning with right click
         if (dragMoved) {
           e.preventDefault();
+        }
+      }}
+      onDoubleClick={(e) => {
+        // Double click on canvas background opens add entity modal
+        const target = e.target as HTMLElement | SVGElement;
+        if (!target.closest('[data-node="true"]') && !target.closest('[data-badge="true"]')) {
+          setIsAddNodeOpen(true);
         }
       }}
     >
@@ -535,6 +513,7 @@ export const GraphView: React.FC<GraphViewProps> = ({
           <Compass className="w-3.5 h-3.5 text-indigo-400" />
           <span>Graph Canvas</span>
         </span>
+
         <button
           id="btn-zoom-in"
           onClick={() => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale * 1.2, 3.5) }))}
@@ -567,10 +546,23 @@ export const GraphView: React.FC<GraphViewProps> = ({
         >
           <Crosshair className="w-3.5 h-3.5" />
         </button>
+
+        <span className="h-3 w-[1px] bg-[#2F3440]" />
+
+        {/* Layer Swimlane Auto-Align Button */}
+        <button
+          id="btn-auto-align-layer"
+          onClick={handleAutoAlignByLayer}
+          className="flex items-center space-x-1 px-1.5 py-1 bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-800/40 rounded transition-colors"
+          title="所属レイヤーごとに帯状スイムレーンへ自動整列"
+        >
+          <LayoutGrid className="w-3.5 h-3.5 text-indigo-400" />
+          <span className="text-[11px] font-medium">レイヤー整列</span>
+        </button>
+
         <button
           id="btn-reset-layout"
           onClick={() => {
-            // Re-arrange circularly
             const total = entities.length;
             const radius = Math.max(160, 60 * total);
             const cx = radius + 100;
@@ -591,360 +583,670 @@ export const GraphView: React.FC<GraphViewProps> = ({
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
+
+        {/* Quick Add Node Button */}
+        {onAddEntity && (
+          <button
+            id="btn-quick-add-node"
+            onClick={() => setIsAddNodeOpen(true)}
+            className="flex items-center space-x-1 px-1.5 py-1 bg-[#252A36] hover:bg-[#2F3646] text-sky-300 border border-[#3A4254] rounded transition-colors"
+            title="キャンバスに新しいエンティティを追加"
+          >
+            <Plus className="w-3 h-3 text-sky-400" />
+            <span className="text-[11px]">ノード追加</span>
+          </button>
+        )}
+
         <span className="text-[11px] text-gray-400 pl-1 font-mono">
           {Math.round(transform.scale * 100)}%
         </span>
       </div>
 
-      {/* Top Right Stats & Legend */}
-      <div className="absolute top-3 right-3 z-10 flex items-center space-x-2 bg-[#1C2028]/90 backdrop-blur border border-[#2F3440] px-2.5 py-1 rounded-md text-[11px] text-gray-400 shadow-md">
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-[#5B8DEF]" />
-          <span>Char</span>
-        </span>
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-[#E0A73C]" />
-          <span>Org</span>
-        </span>
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-[#5FB878]" />
-          <span>Loc</span>
-        </span>
-        <span className="text-gray-600">|</span>
-        <span className="flex items-center space-x-1 text-purple-300 font-medium">
-          <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-          <span>越境関係</span>
-        </span>
-        <span className="text-gray-600">|</span>
-        <span className="text-gray-300 font-mono">{entities.length} nodes, {relations.length} edges</span>
+      {/* Top Right: Search & Stats Bar */}
+      <div className="absolute top-3 right-3 z-10 flex items-center space-x-2">
+        {/* Search Input / Button */}
+        <div className="relative">
+          {isSearchOpen ? (
+            <div className="flex items-center bg-[#181B22]/95 border border-indigo-500/80 rounded-lg px-2.5 py-1 shadow-2xl text-xs space-x-1.5 animate-fadeIn">
+              <Search className="w-3.5 h-3.5 text-indigo-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && matchedEntities.length > 0) {
+                    focusOnEntity(matchedEntities[0].id);
+                  } else if (e.key === 'Escape') {
+                    setIsSearchOpen(false);
+                    setSearchQuery('');
+                  }
+                }}
+                placeholder="ノード名・レイヤー・種別..."
+                className="bg-transparent border-none text-white text-xs outline-none w-48 placeholder-gray-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-gray-400 hover:text-gray-200"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+              <span className="text-[10px] text-gray-400 font-mono">
+                {matchedEntities.length}/{entities.length}
+              </span>
+              <button
+                onClick={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                }}
+                className="p-0.5 text-gray-400 hover:text-gray-200"
+                title="閉じる (Esc)"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setIsSearchOpen(true);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }}
+              className="flex items-center space-x-1.5 bg-[#1C2028]/90 hover:bg-[#252A36] backdrop-blur border border-[#2F3440] px-2.5 py-1 rounded-md text-xs text-gray-300 shadow-md transition-colors"
+              title="ノードを検索 (Ctrl + F)"
+            >
+              <Search className="w-3.5 h-3.5 text-gray-400" />
+              <span>検索</span>
+              <kbd className="text-[10px] bg-[#14161C] border border-[#2F3440] rounded px-1 text-gray-400 font-mono">
+                Ctrl+F
+              </kbd>
+            </button>
+          )}
+
+          {/* Search Results Dropdown */}
+          {isSearchOpen && searchQuery.trim() !== '' && matchedEntities.length > 0 && (
+            <div className="absolute top-full right-0 mt-1.5 w-64 max-h-56 overflow-y-auto bg-[#181B22]/95 border border-[#2F3440] rounded-lg shadow-2xl p-1 z-30 divide-y divide-[#252A36]">
+              {matchedEntities.slice(0, 10).map(ent => {
+                const layerCol = getLayerColor(ent.layer);
+                return (
+                  <button
+                    key={ent.id}
+                    onClick={() => focusOnEntity(ent.id)}
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-[#252A36] rounded text-xs flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: LAYER_COLORS[ent.type] || '#9AA0A6' }} />
+                      <span className="font-semibold text-gray-100">{ent.name}</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded" style={{ backgroundColor: layerCol.bgRgba, color: layerCol.textHex }}>
+                      {ent.layer || '未分類'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center space-x-2 bg-[#1C2028]/90 backdrop-blur border border-[#2F3440] px-2.5 py-1 rounded-md text-[11px] text-gray-400 shadow-md">
+          <span className="flex items-center space-x-1">
+            <span className="w-2 h-2 rounded-full bg-[#5B8DEF]" />
+            <span>Char</span>
+          </span>
+          <span className="flex items-center space-x-1">
+            <span className="w-2 h-2 rounded-full bg-[#E0A73C]" />
+            <span>Org</span>
+          </span>
+          <span className="flex items-center space-x-1">
+            <span className="w-2 h-2 rounded-full bg-[#5FB878]" />
+            <span>Loc</span>
+          </span>
+          <span className="text-gray-600">|</span>
+          <span className="flex items-center space-x-1 text-purple-300 font-medium">
+            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+            <span>越境関係</span>
+          </span>
+          <span className="text-gray-600">|</span>
+          <span className="text-gray-300 font-mono">
+            {selectedNodeIds.size > 0 ? (
+              <span className="text-sky-400 font-semibold">{selectedNodeIds.size} 選択中</span>
+            ) : (
+              `${entities.length} nodes, ${relations.length} edges`
+            )}
+          </span>
+        </div>
       </div>
 
       {/* Floating Camera Directional Controller (D-Pad) */}
       <div className="absolute bottom-4 right-4 z-10 flex flex-col items-center bg-[#181B22]/90 backdrop-blur border border-[#2A2F3B] p-1.5 rounded-xl shadow-xl">
         <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1 flex items-center space-x-1">
           <Move className="w-2.5 h-2.5 text-sky-400" />
-          <span>Camera</span>
+          <span>Pan</span>
         </div>
         <button
-          id="btn-cam-up"
-          onClick={() => panBy(0, 70)}
-          className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
-          title="上へカメラ移動 (↑ / W)"
+          onClick={() => panBy(0, 50)}
+          className="p-1 hover:bg-[#252A36] text-gray-300 hover:text-white rounded"
+          title="上へスクロール (ArrowUp)"
         >
           <ArrowUp className="w-3.5 h-3.5" />
         </button>
-        <div className="flex items-center space-x-1 my-1">
+        <div className="flex items-center space-x-1 my-0.5">
           <button
-            id="btn-cam-left"
-            onClick={() => panBy(70, 0)}
-            className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
-            title="左へカメラ移動 (← / A)"
+            onClick={() => panBy(50, 0)}
+            className="p-1 hover:bg-[#252A36] text-gray-300 hover:text-white rounded"
+            title="左へスクロール (ArrowLeft)"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
           <button
-            id="btn-cam-reset"
-            onClick={fitToView}
-            className="w-7 h-7 flex items-center justify-center bg-[#2A303D] hover:bg-sky-600 text-sky-300 hover:text-white rounded transition-colors text-[10px] font-bold"
-            title="全体リセット (Fit)"
+            onClick={centerCamera}
+            className="p-1 bg-[#20242D] hover:bg-sky-600/30 text-sky-400 rounded"
+            title="中央に戻す"
           >
-            FIT
+            <Crosshair className="w-3.5 h-3.5" />
           </button>
           <button
-            id="btn-cam-right"
-            onClick={() => panBy(-70, 0)}
-            className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
-            title="右へカメラ移動 (→ / D)"
+            onClick={() => panBy(-50, 0)}
+            className="p-1 hover:bg-[#252A36] text-gray-300 hover:text-white rounded"
+            title="右へスクロール (ArrowRight)"
           >
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
         <button
-          id="btn-cam-down"
-          onClick={() => panBy(0, -70)}
-          className="w-7 h-7 flex items-center justify-center bg-[#232732] hover:bg-sky-700/60 active:bg-sky-600 text-gray-200 rounded transition-colors"
-          title="下へカメラ移動 (↓ / S)"
+          onClick={() => panBy(0, -50)}
+          className="p-1 hover:bg-[#252A36] text-gray-300 hover:text-white rounded"
+          title="下へスクロール (ArrowDown)"
         >
           <ArrowDown className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      {/* Floating Pan Hint */}
-      <div className="absolute bottom-4 left-4 z-10 pointer-events-none hidden sm:flex items-center space-x-2 bg-[#181B22]/80 backdrop-blur border border-[#2A2F3B]/60 px-2.5 py-1 rounded text-[11px] text-gray-400 shadow-md">
-        <Hand className="w-3 h-3 text-sky-400" />
-        <span>1本指/ドラッグでカメラ移動 • 2本指でスクロール/ピンチズーム</span>
-      </div>
-
       {/* SVG Canvas */}
-      {entities.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 space-y-2">
-          <Layers className="w-8 h-8 opacity-40" />
-          <p className="text-xs">（Codex Syntaxを入力するとここに世界が図になります）</p>
-        </div>
-      ) : (
-        <svg
-          id="graph-svg"
-          className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
-          style={{ width: '100%', height: '100%' }}
-        >
-          {/* Background Grid Pattern */}
-          <defs>
-            <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
-              <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1A1D24" strokeWidth="1" />
-            </pattern>
-            {/* Arrow Marker */}
-            <marker
-              id="arrowhead"
-              markerWidth="10"
-              markerHeight="7"
-              refX="9"
-              refY="3.5"
-              orient="auto"
-            >
-              <polygon points="0 0, 10 3.5, 0 7" fill="#6B7280" />
-            </marker>
-            {/* Cross-layer Arrow Marker */}
-            <marker
-              id="arrowhead-cross"
-              markerWidth="11"
-              markerHeight="8"
-              refX="9.5"
-              refY="4"
-              orient="auto"
-            >
-              <polygon points="0 0, 11 4, 0 8" fill="#c084fc" />
-            </marker>
-          </defs>
+      <svg
+        id="graph-canvas-svg"
+        className="w-full h-full cursor-grab active:cursor-grabbing"
+        style={{
+          backgroundColor: '#111317',
+          backgroundImage: 'radial-gradient(circle, #222631 1px, transparent 1px)',
+          backgroundSize: `${24 * transform.scale}px ${24 * transform.scale}px`,
+          backgroundPosition: `${transform.x}px ${transform.y}px`,
+        }}
+      >
+        <defs>
+          {/* Standard relation marker */}
+          <marker
+            id="arrowhead"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#6B7280" />
+          </marker>
+          {/* Cross-layer purple relation marker */}
+          <marker
+            id="arrowhead-cross"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#a855f7" />
+          </marker>
+        </defs>
 
-          {/* Grid Background */}
-          <rect id="graph-bg" width="100%" height="100%" fill="url(#grid)" />
+        <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
+          {/* Layer Group Enclosure Boxes */}
+          {Object.entries(layerBounds).map(([layerName, bounds]) => {
+            const padX = NODE_RADIUS + 30;
+            const padY = NODE_RADIUS + 32;
+            const boxX = bounds.minX - padX;
+            const boxY = bounds.minY - padY;
+            const boxW = Math.max(bounds.maxX - bounds.minX + padX * 2, 100);
+            const boxH = Math.max(bounds.maxY - bounds.minY + padY * 2, 90);
+            const color = getLayerColor(layerName);
 
-          {/* Graph World Group */}
-          <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
-            {/* Layer Enclosure Bounds */}
-            {Object.entries(layerBounds).map(([layerName, bounds]) => {
-              const pad = 48;
-              const x = bounds.minX - pad;
-              const y = bounds.minY - pad;
-              const width = bounds.maxX - bounds.minX + pad * 2;
-              const height = bounds.maxY - bounds.minY + pad * 2;
-              const color = getLayerColor(layerName === '未分類' ? null : layerName);
-
-              return (
-                <g key={`layer-bound-${layerName}`} className="pointer-events-none">
+            return (
+              <g key={`layer-box-${layerName}`} className="pointer-events-none">
+                <rect
+                  x={boxX}
+                  y={boxY}
+                  width={boxW}
+                  height={boxH}
+                  rx="16"
+                  fill={color.bgRgba}
+                  stroke={color.hex}
+                  strokeWidth="1.2"
+                  strokeDasharray="4 4"
+                  opacity="0.85"
+                />
+                <g transform={`translate(${boxX + 14}, ${boxY + 18})`}>
                   <rect
-                    x={x}
-                    y={y}
-                    width={width}
-                    height={height}
-                    rx="16"
-                    fill={color.bgRgba}
-                    stroke={color.borderHex}
-                    strokeWidth="1.5"
-                    strokeDasharray="5 3"
-                    opacity="0.85"
+                    x="-6"
+                    y="-12"
+                    width={layerName.length * 8 + 36}
+                    height="18"
+                    rx="9"
+                    fill="#181B22"
+                    stroke={color.hex}
+                    strokeWidth="1"
+                    opacity="0.95"
                   />
-                  <g transform={`translate(${x + 12}, ${y - 10})`}>
-                    <rect
-                      x="0"
-                      y="0"
-                      width={layerName.length * 8 + 32}
-                      height="20"
-                      rx="5"
-                      fill="#15181F"
-                      stroke={color.borderHex}
-                      strokeWidth="1.2"
-                    />
-                    <circle cx="9" cy="10" r="3.5" fill={color.hex} />
-                    <text
-                      x="18"
-                      y="14"
-                      fill="#F1F5F9"
-                      fontSize="9.5"
-                      fontWeight="700"
-                      fontFamily="sans-serif"
-                    >
-                      {layerName}
-                    </text>
-                  </g>
-                </g>
-              );
-            })}
-
-            {/* Edges */}
-            {relations.map(rel => {
-              const srcPos = positions[rel.source];
-              const tgtPos = positions[rel.target];
-              if (!srcPos || !tgtPos) return null;
-
-              const srcEntity = model.entities[rel.source];
-              const tgtEntity = model.entities[rel.target];
-              const isCrossLayer = isCrossLayerRelation(srcEntity?.layer, tgtEntity?.layer);
-
-              const dx = tgtPos.x - srcPos.x;
-              const dy = tgtPos.y - srcPos.y;
-              const len = Math.hypot(dx, dy);
-              if (len === 0) return null;
-
-              const ux = dx / len;
-              const uy = dy / len;
-
-              const startX = srcPos.x + ux * NODE_RADIUS;
-              const startY = srcPos.y + uy * NODE_RADIUS;
-              const endX = tgtPos.x - ux * (NODE_RADIUS + 4);
-              const endY = tgtPos.y - uy * (NODE_RADIUS + 4);
-
-              const midX = (startX + endX) / 2;
-              const midY = (startY + endY) / 2;
-
-              const strokeDasharray = isCrossLayer ? '6 4' : getLineDash(rel.status);
-              const strokeColor = isCrossLayer ? '#c084fc' : rel.status === 'rumor' ? '#9CA3AF' : '#6B7280';
-              const strokeWidth = isCrossLayer ? '2.5' : '2';
-              const markerEnd = isCrossLayer ? 'url(#arrowhead-cross)' : 'url(#arrowhead)';
-
-              const badgeLabel = rel.type;
-              const badgeWidth = badgeLabel.length * 7 + 18;
-              const badgeFill = isCrossLayer ? '#221530' : '#1E222A';
-              const badgeStroke = isCrossLayer ? '#a855f7' : '#383E4D';
-              const badgeTextColor = isCrossLayer ? '#f3e8ff' : '#E2E8F0';
-
-              return (
-                <g key={rel.id} className="group">
-                  {/* Invisible thick line for easier clicking/hover */}
-                  <line
-                    x1={startX}
-                    y1={startY}
-                    x2={endX}
-                    y2={endY}
-                    stroke="transparent"
-                    strokeWidth="16"
-                  />
-                  {/* Visible Edge Line */}
-                  <line
-                    x1={startX}
-                    y1={startY}
-                    x2={endX}
-                    y2={endY}
-                    stroke={strokeColor}
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={strokeDasharray}
-                    markerEnd={markerEnd}
-                  />
-
-                  {/* Relation Label Badge */}
-                  <g
-                    data-badge="true"
-                    transform={`translate(${midX}, ${midY})`}
-                    className="cursor-pointer"
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      if (rel.ref_key) {
-                        onRelationTypeEdit(rel.ref_key, rel.type);
-                      }
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (rel.ref_key) {
-                        onRelationTypeEdit(rel.ref_key, rel.type);
-                      }
-                    }}
+                  <text
+                    x="4"
+                    y="1"
+                    fill={color.textHex}
+                    fontSize="10"
+                    fontWeight="700"
+                    fontFamily="sans-serif"
                   >
-                    <rect
-                      x={-(badgeWidth / 2)}
-                      y="-11"
-                      width={badgeWidth}
-                      height="22"
-                      rx="11"
-                      fill={badgeFill}
-                      stroke={badgeStroke}
-                      strokeWidth={isCrossLayer ? "1.5" : "1.2"}
-                      className="group-hover:stroke-indigo-400 group-hover:fill-[#252A36] transition-colors"
-                    />
-                    <text
-                      x="0"
-                      y="4"
-                      textAnchor="middle"
-                      fill={badgeTextColor}
-                      fontSize="11"
-                      fontWeight={isCrossLayer ? "600" : "500"}
-                      fontFamily="sans-serif"
-                    >
-                      {badgeLabel}
-                    </text>
-                  </g>
+                    {layerName} ({bounds.count})
+                  </text>
                 </g>
-              );
-            })}
+              </g>
+            );
+          })}
 
-            {/* Nodes */}
-            {entities.map(entity => {
-              const pos = positions[entity.id] || { x: 100, y: 100 };
-              const typeColor = LAYER_COLORS[entity.type] || LAYER_COLORS.Unknown;
-              const layerColor = getLayerColor(entity.layer);
-              const isDragging = draggingNodeId === entity.id;
+          {/* Relations (Edges) */}
+          {relations.map(rel => {
+            const srcPos = positions[rel.source];
+            const tgtPos = positions[rel.target];
+            if (!srcPos || !tgtPos) return null;
 
-              return (
+            const srcEntity = model.entities[rel.source];
+            const tgtEntity = model.entities[rel.target];
+            const isCrossLayer = isCrossLayerRelation(srcEntity?.layer, tgtEntity?.layer);
+
+            const dx = tgtPos.x - srcPos.x;
+            const dy = tgtPos.y - srcPos.y;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist < 1) return null;
+
+            const ux = dx / dist;
+            const uy = dy / dist;
+
+            const startX = srcPos.x + ux * (NODE_RADIUS + 4);
+            const startY = srcPos.y + uy * (NODE_RADIUS + 4);
+            const endX = tgtPos.x - ux * (NODE_RADIUS + 4);
+            const endY = tgtPos.y - uy * (NODE_RADIUS + 4);
+
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2;
+
+            const strokeDasharray = isCrossLayer ? '6 4' : getLineDash(rel.status);
+            const strokeColor = isCrossLayer ? '#c084fc' : rel.status === 'rumor' ? '#9CA3AF' : '#6B7280';
+            const strokeWidth = isCrossLayer ? '2.5' : '2';
+            const markerEnd = isCrossLayer ? 'url(#arrowhead-cross)' : 'url(#arrowhead)';
+
+            const badgeLabel = rel.type;
+            const badgeWidth = badgeLabel.length * 7 + 18;
+            const badgeFill = isCrossLayer ? '#221530' : '#1E222A';
+            const badgeStroke = isCrossLayer ? '#a855f7' : '#383E4D';
+            const badgeTextColor = isCrossLayer ? '#f3e8ff' : '#E2E8F0';
+
+            return (
+              <g key={rel.id} className="group">
+                {/* Invisible thick line for easier clicking/hover */}
+                <line
+                  x1={startX}
+                  y1={startY}
+                  x2={endX}
+                  y2={endY}
+                  stroke="transparent"
+                  strokeWidth="16"
+                />
+                {/* Visible Edge Line */}
+                <line
+                  x1={startX}
+                  y1={startY}
+                  x2={endX}
+                  y2={endY}
+                  stroke={strokeColor}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={strokeDasharray}
+                  markerEnd={markerEnd}
+                />
+
+                {/* Relation Label Badge */}
                 <g
-                  key={entity.id}
-                  data-node="true"
-                  data-node-id={entity.id}
-                  transform={`translate(${pos.x}, ${pos.y})`}
-                  className="cursor-grab active:cursor-grabbing"
-                  onMouseDown={(e) => {
-                    if (e.button === 0) {
-                      e.stopPropagation();
-                      setDraggingNodeId(entity.id);
-                      setDragMoved(false);
+                  data-badge="true"
+                  transform={`translate(${midX}, ${midY})`}
+                  className="cursor-pointer"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (rel.ref_key) {
+                      onRelationTypeEdit(rel.ref_key, rel.type);
+                    }
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (rel.ref_key) {
+                      onRelationTypeEdit(rel.ref_key, rel.type);
                     }
                   }}
                 >
-                  {/* Shadow / Layer-themed Glow */}
-                  <circle
-                    r={NODE_RADIUS + 4}
-                    fill={layerColor.hex}
-                    opacity={isDragging ? "0.45" : "0.22"}
+                  <rect
+                    x={-(badgeWidth / 2)}
+                    y="-11"
+                    width={badgeWidth}
+                    height="22"
+                    rx="11"
+                    fill={badgeFill}
+                    stroke={badgeStroke}
+                    strokeWidth={isCrossLayer ? "1.5" : "1.2"}
+                    className="group-hover:stroke-indigo-400 group-hover:fill-[#252A36] transition-colors"
                   />
-                  {/* Main Circle */}
-                  <circle
-                    r={NODE_RADIUS}
-                    fill={typeColor}
-                    stroke={layerColor.hex}
-                    strokeWidth={entity.layer ? "2.5" : "1.5"}
-                    strokeDasharray={entity.layer ? undefined : "3 3"}
-                    className="transition-transform duration-75"
-                  />
-                  {/* Entity Name */}
                   <text
                     x="0"
-                    y="-4"
+                    y="4"
                     textAnchor="middle"
-                    fill="#FFFFFF"
-                    fontSize="12.5"
-                    fontWeight="700"
+                    fill={badgeTextColor}
+                    fontSize="11"
+                    fontWeight={isCrossLayer ? "600" : "500"}
                     fontFamily="sans-serif"
-                    style={{ pointerEvents: 'none' }}
                   >
-                    {entity.name}
-                  </text>
-                  {/* Entity Type / Layer */}
-                  <text
-                    x="0"
-                    y="12"
-                    textAnchor="middle"
-                    fill={layerColor.textHex}
-                    fontSize="9.5"
-                    fontWeight="600"
-                    opacity="0.95"
-                    fontFamily="sans-serif"
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {entity.layer ? `${entity.type} · ${entity.layer}` : entity.type}
+                    {badgeLabel}
                   </text>
                 </g>
-              );
-            })}
-          </g>
-        </svg>
+              </g>
+            );
+          })}
+
+          {/* Nodes */}
+          {entities.map(entity => {
+            const pos = positions[entity.id] || { x: 100, y: 100 };
+            const typeColor = LAYER_COLORS[entity.type] || LAYER_COLORS.Unknown;
+            const layerColor = getLayerColor(entity.layer);
+            const isDragging = draggingNodeId === entity.id;
+            const isSelected = selectedNodeIds.has(entity.id);
+            const isMatch = matchedEntityIds.has(entity.id);
+            const isDimmed = searchQuery.trim() !== '' && !isMatch;
+
+            return (
+              <g
+                key={entity.id}
+                data-node="true"
+                data-node-id={entity.id}
+                transform={`translate(${pos.x}, ${pos.y})`}
+                opacity={isDimmed ? 0.25 : 1}
+                className="cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                onMouseDown={(e) => {
+                  if (e.button === 0) {
+                    e.stopPropagation();
+                    setDraggingNodeId(entity.id);
+                    setDragMoved(false);
+
+                    if (e.shiftKey) {
+                      // Toggle selection
+                      setSelectedNodeIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(entity.id)) next.delete(entity.id);
+                        else next.add(entity.id);
+                        return next;
+                      });
+                    } else if (!selectedNodeIds.has(entity.id)) {
+                      setSelectedNodeIds(new Set([entity.id]));
+                    }
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({
+                    visible: true,
+                    x: e.clientX,
+                    y: e.clientY,
+                    entity,
+                  });
+                  setSelectedNodeIds(new Set([entity.id]));
+                }}
+              >
+                {/* Search Match Halo */}
+                {isMatch && (
+                  <circle
+                    r={NODE_RADIUS + 10}
+                    fill="none"
+                    stroke="#38BDF8"
+                    strokeWidth="2.5"
+                    strokeDasharray="4 4"
+                    className="animate-spin"
+                  />
+                )}
+
+                {/* Multi-Selection Accent Ring */}
+                {isSelected && (
+                  <circle
+                    r={NODE_RADIUS + 6}
+                    fill="none"
+                    stroke="#60A5FA"
+                    strokeWidth="2"
+                    strokeDasharray="4 3"
+                  />
+                )}
+
+                {/* Shadow / Layer-themed Glow */}
+                <circle
+                  r={NODE_RADIUS + 4}
+                  fill={layerColor.hex}
+                  opacity={isDragging ? "0.45" : "0.22"}
+                />
+                {/* Main Circle */}
+                <circle
+                  r={NODE_RADIUS}
+                  fill={typeColor}
+                  stroke={layerColor.hex}
+                  strokeWidth={entity.layer ? "2.5" : "1.5"}
+                  strokeDasharray={entity.layer ? undefined : "3 3"}
+                  className="transition-transform duration-75"
+                />
+                {/* Entity Name */}
+                <text
+                  x="0"
+                  y="-4"
+                  textAnchor="middle"
+                  fill="#FFFFFF"
+                  fontSize="12.5"
+                  fontWeight="700"
+                  fontFamily="sans-serif"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {entity.name}
+                </text>
+                {/* Entity Type / Layer */}
+                <text
+                  x="0"
+                  y="12"
+                  textAnchor="middle"
+                  fill={layerColor.textHex}
+                  fontSize="9.5"
+                  fontWeight="600"
+                  opacity="0.95"
+                  fontFamily="sans-serif"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {entity.layer || entity.type}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* Rubberband Box Selection in Screen Coordinates */}
+        {selectionBox && (
+          <rect
+            x={Math.min(selectionBox.startX, selectionBox.currentX) - (containerRef.current?.getBoundingClientRect().left || 0)}
+            y={Math.min(selectionBox.startY, selectionBox.currentY) - (containerRef.current?.getBoundingClientRect().top || 0)}
+            width={Math.abs(selectionBox.currentX - selectionBox.startX)}
+            height={Math.abs(selectionBox.currentY - selectionBox.startY)}
+            fill="rgba(99, 102, 241, 0.15)"
+            stroke="#818CF8"
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
+          />
+        )}
+      </svg>
+
+      {/* Node Right-Click Context Menu */}
+      {contextMenu.visible && contextMenu.entity && (
+        <div
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 bg-[#181B22] border border-[#2F3440] rounded-xl shadow-2xl p-1.5 min-w-[200px] text-xs space-y-1 animate-fadeIn"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 border-b border-[#2A2F3B] flex items-center justify-between">
+            <span className="font-bold text-white">{contextMenu.entity.name}</span>
+            <span className="text-[10px] text-gray-400 font-mono">{contextMenu.entity.type}</span>
+          </div>
+
+          <div className="py-1">
+            <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-gray-400 font-semibold flex items-center space-x-1">
+              <Layers className="w-3 h-3 text-indigo-400" />
+              <span>所属レイヤーを変更</span>
+            </div>
+            <div className="max-h-36 overflow-y-auto px-1 space-y-0.5">
+              {(allLayers.length > 0 ? allLayers : ['Su-ken', 'Kan-ken', '現実界', '異界']).map(layer => {
+                const isCurrentLayer = contextMenu.entity?.layer === layer;
+                return (
+                  <button
+                    key={layer}
+                    onClick={() => {
+                      if (contextMenu.entity && onUpdateEntityLayer) {
+                        onUpdateEntityLayer(contextMenu.entity.name, layer);
+                      }
+                      setContextMenu({ visible: false, x: 0, y: 0, entity: null });
+                    }}
+                    className={`w-full text-left px-2.5 py-1 rounded flex items-center justify-between text-xs transition-colors ${
+                      isCurrentLayer
+                        ? 'bg-indigo-950 text-indigo-300 font-semibold'
+                        : 'text-gray-300 hover:bg-[#252A36]'
+                    }`}
+                  >
+                    <span>{layer}</span>
+                    {isCurrentLayer && <span className="text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {onDeleteEntity && (
+            <div className="pt-1 border-t border-[#2A2F3B]">
+              <button
+                onClick={() => {
+                  if (contextMenu.entity && onDeleteEntity) {
+                    onDeleteEntity(contextMenu.entity.name);
+                  }
+                  setContextMenu({ visible: false, x: 0, y: 0, entity: null });
+                }}
+                className="w-full text-left px-2.5 py-1.5 text-rose-400 hover:bg-rose-950/40 rounded flex items-center space-x-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ノードを削除</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quick Add Node Modal */}
+      {isAddNodeOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C2028] border border-[#2F3440] rounded-xl w-full max-w-sm shadow-2xl p-5 space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between pb-2 border-b border-[#2F3440]">
+              <h3 className="text-sm font-bold text-white flex items-center space-x-1.5">
+                <Plus className="w-4 h-4 text-sky-400" />
+                <span>新しいノード（エンティティ）を追加</span>
+              </h3>
+              <button
+                onClick={() => setIsAddNodeOpen(false)}
+                className="text-gray-400 hover:text-gray-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">名前 / 識別子</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={addNodeData.name}
+                  onChange={e => setAddNodeData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="例: Alice, 魔法騎士団, 首都"
+                  className="w-full bg-[#14161C] border border-[#2F3440] rounded px-3 py-1.5 text-white outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">種別 (Type)</label>
+                <select
+                  value={addNodeData.type}
+                  onChange={e => setAddNodeData(prev => ({ ...prev, type: e.target.value }))}
+                  className="w-full bg-[#14161C] border border-[#2F3440] rounded px-3 py-1.5 text-white outline-none focus:border-sky-500"
+                >
+                  <option value="Character">Character (キャラクター)</option>
+                  <option value="Organization">Organization (組織・勢力)</option>
+                  <option value="Location">Location (場所・拠点)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-gray-300 font-semibold mb-1">所属レイヤー (Layer)</label>
+                <div className="flex space-x-1.5">
+                  <select
+                    value={addNodeData.layer}
+                    onChange={e => setAddNodeData(prev => ({ ...prev, layer: e.target.value }))}
+                    className="flex-1 bg-[#14161C] border border-[#2F3440] rounded px-3 py-1.5 text-white outline-none focus:border-sky-500"
+                  >
+                    {(allLayers.length > 0 ? allLayers : ['Su-ken', 'Kan-ken', '現実界', '異界']).map(l => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={addNodeData.layer}
+                    onChange={e => setAddNodeData(prev => ({ ...prev, layer: e.target.value }))}
+                    placeholder="自由入力"
+                    className="w-24 bg-[#14161C] border border-[#2F3440] rounded px-2 py-1.5 text-white outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[#2F3440]">
+              <button
+                type="button"
+                onClick={() => setIsAddNodeOpen(false)}
+                className="px-3 py-1.5 bg-[#252A36] text-gray-300 hover:bg-[#2E3544] rounded text-xs"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (addNodeData.name.trim() && onAddEntity) {
+                    onAddEntity(addNodeData.name.trim(), addNodeData.type, addNodeData.layer.trim() || undefined);
+                    setIsAddNodeOpen(false);
+                    setAddNodeData({ name: '', type: 'Character', layer: allLayers[0] || 'Su-ken' });
+                  }
+                }}
+                disabled={!addNodeData.name.trim()}
+                className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded text-xs shadow-md"
+              >
+                追加する
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
